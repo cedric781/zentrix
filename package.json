@@ -20,6 +20,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "dependencies": {
     "@prisma/client": "6.19.3",
     "next": "16.2.4",
@@ -45,14 +48,7 @@
     "vitest": "4.1.5"
   },
   "pnpm": {
-    "ignoredBuiltDependencies": [
-      "sharp",
-      "unrs-resolver"
-    ],
-    "onlyBuiltDependencies": [
-      "@prisma/engines",
-      "esbuild",
-      "prisma"
-    ]
+    "ignoredBuiltDependencies": ["sharp", "unrs-resolver"],
+    "onlyBuiltDependencies": ["@prisma/engines", "esbuild", "prisma"]
   }
 }

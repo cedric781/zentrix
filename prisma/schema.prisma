@@ -1,12 +1,196 @@
-// STUB schema for PROMPT_01 - full schema comes in PROMPT_02.
-// Reason: src/lib/prisma.ts imports @prisma/client which only exists
-// after `prisma generate` has run against a valid schema.
+// CANONICAL: Single Prisma schema for zentrix.
+// Reference: docs/LESSONS_FROM_WAGER.md R1 (one schema), R4 (BigInt money),
+//            R5 (idempotency on DB), R6 (FOR UPDATE in app code).
+//
+// DO NOT create parallel files like *-additions.prisma or schema-v2.prisma.
+// Every change to the data model goes through this file via `prisma migrate dev`.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ── ENUMS ──────────────────────────────────────────────────────────────────
+
+enum AccountType {
+  USER
+  BET_ESCROW
+  TREASURY
+  EXTERNAL
+}
+
+enum LedgerEntryType {
+  DEPOSIT_CREDIT
+  WITHDRAWAL_DEBIT
+  WITHDRAWAL_REVERSAL
+  ESCROW_LOCK
+  ESCROW_RELEASE
+  SETTLEMENT_PAYOUT
+  FEE_COLLECTION
+  ADMIN_ADJUSTMENT
+}
+
+enum DepositStatus {
+  PENDING
+  CREDITED
+  FAILED
+}
+
+enum WithdrawalStatus {
+  PENDING_VALIDATION
+  QUEUED
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  CANCELLED
+}
+
+// ── MODELS ─────────────────────────────────────────────────────────────────
+
+model User {
+  id                    String   @id @default(uuid())
+  privyId               String   @unique @map("privy_id")
+  email                 String?  @unique
+  embeddedWalletAddress String?  @unique @map("embedded_wallet_address")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  financialAccount FinancialAccount? @relation("UserFinancialAccount")
+  deposits         Deposit[]
+  withdrawals      Withdrawal[]
+
+  @@map("users")
+}
+
+model FinancialAccount {
+  id           String      @id @default(uuid())
+  accountType  AccountType @map("account_type")
+  scopeKey     String      @unique @map("scope_key")
+  userId       String?     @unique @map("user_id")
+  balanceUnits BigInt      @default(0) @map("balance_units")
+  label        String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  user           User?           @relation("UserFinancialAccount", fields: [userId], references: [id])
+  creditEntries  LedgerEntry[]   @relation("CreditAccount")
+  debitEntries   LedgerEntry[]   @relation("DebitAccount")
+
+  @@index([accountType], map: "idx_financial_accounts_type")
+  @@index([balanceUnits], map: "idx_financial_accounts_balance")
+  @@map("financial_accounts")
+}
+
+model LedgerTransaction {
+  id              String   @id @default(uuid())
+  idempotencyKey  String   @unique @map("idempotency_key")
+  description     String
+  initiatorUserId String?  @map("initiator_user_id")
+  refType         String?  @map("ref_type")
+  refId           String?  @map("ref_id")
+  totalDebits     BigInt   @map("total_debits")
+  totalCredits    BigInt   @map("total_credits")
+  entryCount      Int      @map("entry_count")
+  isBalanced      Boolean  @default(true) @map("is_balanced")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  entries LedgerEntry[]
+
+  @@index([refType, refId], map: "idx_ledger_tx_ref")
+  @@index([createdAt], map: "idx_ledger_tx_created")
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id                 String          @id @default(uuid())
+  transactionId      String          @map("transaction_id")
+  debitAccountId     String          @map("debit_account_id")
+  creditAccountId    String          @map("credit_account_id")
+  amountUnits        BigInt          @map("amount_units")
+  entryType          LedgerEntryType @map("entry_type")
+  debitBalanceAfter  BigInt          @map("debit_balance_after")
+  creditBalanceAfter BigInt          @map("credit_balance_after")
+  note               String?
+  meta               Json?
+  createdAt          DateTime        @default(now()) @map("created_at")
+
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id])
+  debitAccount  FinancialAccount  @relation("DebitAccount", fields: [debitAccountId], references: [id])
+  creditAccount FinancialAccount  @relation("CreditAccount", fields: [creditAccountId], references: [id])
+
+  @@index([transactionId], map: "idx_ledger_entries_tx")
+  @@index([debitAccountId, createdAt], map: "idx_ledger_entries_debit")
+  @@index([creditAccountId, createdAt], map: "idx_ledger_entries_credit")
+  @@index([entryType], map: "idx_ledger_entries_type")
+  @@map("ledger_entries")
+}
+
+model Deposit {
+  id           String        @id @default(uuid())
+  userId       String        @map("user_id")
+  txSignature  String        @map("tx_signature")
+  logIndex     Int           @default(0) @map("log_index")
+  amountUnits  BigInt        @map("amount_units")
+  slot         BigInt
+  status       DepositStatus @default(PENDING)
+  ledgerTxId   String?       @map("ledger_tx_id")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  creditedAt   DateTime?     @map("credited_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([txSignature, logIndex], map: "uq_deposits_tx_log")
+  @@index([userId, createdAt], map: "idx_deposits_user_created")
+  @@index([status], map: "idx_deposits_status")
+  @@map("deposits")
+}
+
+model Withdrawal {
+  id                 String           @id @default(uuid())
+  userId             String           @map("user_id")
+  toAddress          String           @map("to_address")
+  amountUnits        BigInt           @map("amount_units")
+  feeUnits           BigInt           @default(0) @map("fee_units")
+  status             WithdrawalStatus @default(PENDING_VALIDATION)
+  ledgerTxId         String?          @map("ledger_tx_id")
+  reversalLedgerTxId String?          @map("reversal_ledger_tx_id")
+  txSignature        String?          @map("tx_signature")
+  failReason         String?          @map("fail_reason")
+  version            Int              @default(0)
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+  submittedAt        DateTime?        @map("submitted_at")
+  confirmedAt        DateTime?        @map("confirmed_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt], map: "idx_withdrawals_user_created")
+  @@index([status], map: "idx_withdrawals_status")
+  @@map("withdrawals")
+}
+
+model IdempotencyKey {
+  key       String   @id
+  scope     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([scope, createdAt], map: "idx_idem_scope_created")
+  @@map("idempotency_keys")
+}
+
+model ReconciliationLog {
+  id                  String   @id @default(uuid())
+  checkedAt           DateTime @default(now()) @map("checked_at")
+  ledgerTotalUnits    BigInt   @map("ledger_total_units")
+  onChainTotalUnits   BigInt?  @map("on_chain_total_units")
+  delta               BigInt?
+  notes               String?
+
+  @@index([checkedAt], map: "idx_recon_checked_at")
+  @@map("reconciliation_logs")
 }
