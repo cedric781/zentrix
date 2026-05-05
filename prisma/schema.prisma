@@ -1,0 +1,12 @@
+// STUB schema for PROMPT_01 - full schema comes in PROMPT_02.
+// Reason: src/lib/prisma.ts imports @prisma/client which only exists
+// after `prisma generate` has run against a valid schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
