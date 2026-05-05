@@ -1,0 +1,35 @@
+# Default: alle text bestanden krijgen LF in de repo
+# Working copy line endings worden geregeld door core.autocrlf
+# of een platform-specifieke .gitconfig. De index is altijd LF.
+* text=auto eol=lf
+
+# Markdown explicit
+*.md text eol=lf
+
+# Code files (voor later, prompt 01+)
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# Shell scripts MOETEN LF zijn (anders kapot op Linux/Mac)
+*.sh text eol=lf
+
+# Windows-specifiek
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files - geen line-ending normalisatie
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
