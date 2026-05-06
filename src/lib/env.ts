@@ -10,7 +10,10 @@ const EnvSchema = z.object({
   PRIVY_APP_ID: z.string().optional(),
   PRIVY_APP_SECRET: z.string().optional(),
   HELIUS_RPC_URL: z.string().url().optional(),
+  HELIUS_WEBHOOK_SECRET: z.string().min(1).optional(),
+  HELIUS_WEBHOOK_ID: z.string().min(1).optional(),
   USDC_MINT_ADDRESS: z.string().min(32).max(44).optional(),
+  CRON_SECRET: z.string().min(32).optional(),
   DEPOSITS_DISABLED: z.coerce.boolean().default(false),
   WITHDRAWALS_DISABLED: z.coerce.boolean().default(false),
 });
