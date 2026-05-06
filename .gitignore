@@ -48,3 +48,7 @@ prisma/migrations/dev/
 *.log
 
 .vercel
+# Claude Code per-user config
+.claude/
+# pnpm only — block npm lockfile drift
+package-lock.json
