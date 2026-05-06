@@ -46,3 +46,5 @@ next-env.d.ts
 prisma/migrations/dev/
 # Local dev/log artifacts
 *.log
+
+.vercel
