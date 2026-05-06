@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/poll-deposits",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/execute-withdrawals",
+      "schedule": "*/2 * * * *"
     }
   ]
 }
