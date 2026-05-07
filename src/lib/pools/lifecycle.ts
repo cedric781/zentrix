@@ -144,3 +144,59 @@ export async function publishPool(input: PublishPoolInput): Promise<Pool> {
     },
   });
 }
+
+export type ClosePoolBy = "system" | "creator" | "admin";
+
+export interface ClosePoolInput {
+  poolId: string;
+  by: ClosePoolBy;
+}
+
+/**
+ * Close an OPEN pool, transitioning it to CLOSED.
+ *
+ * Callers (the `by` discriminant):
+ * - "system": cron that closes pools whose `bettingClosesAt` has passed
+ * - "creator": creator-initiated early close from the UI
+ * - "admin":  force-close via the admin panel
+ *
+ * Authorization is enforced by the calling wrapper (HTTP route / admin
+ * endpoint), not here. `by` is captured in PoolError.meta on failure
+ * for diagnostics, but is NOT persisted in P09 — audit-log of who
+ * closed the pool is deferred to P14 (DisputeLog/AuditLog).
+ *
+ * Guards: pool must exist (404) and status must be OPEN (409).
+ *
+ * On success: sets status to CLOSED and stamps `closedAt = now()`.
+ * `bettingClosesAt` (the planned deadline) is left untouched so that
+ * the planned-vs-actual close moments remain distinguishable for
+ * later audit and reporting.
+ */
+export async function closePool(input: ClosePoolInput): Promise<Pool> {
+  const pool = await prisma.pool.findUnique({ where: { id: input.poolId } });
+  if (!pool) {
+    throw new PoolError("POOL_NOT_FOUND", "Pool not found", 404, {
+      poolId: input.poolId,
+    });
+  }
+  if (pool.status !== "OPEN") {
+    throw new PoolError(
+      "POOL_INVALID_STATUS",
+      "Only OPEN pools can be closed",
+      409,
+      {
+        poolId: input.poolId,
+        currentStatus: pool.status,
+        by: input.by,
+      },
+    );
+  }
+
+  return prisma.pool.update({
+    where: { id: input.poolId },
+    data: {
+      status: "CLOSED",
+      closedAt: new Date(),
+    },
+  });
+}
