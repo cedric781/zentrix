@@ -271,6 +271,8 @@ model Pool {
   settledAt            DateTime?        @map("settled_at")
   createdAt            DateTime         @default(now()) @map("created_at")
   updatedAt            DateTime         @updatedAt @map("updated_at")
+  publishedAt          DateTime?        @map("published_at")
+  closedAt             DateTime?        @map("closed_at")
 
   creator       User           @relation("PoolCreator", fields: [createdByUserId], references: [id])
   entries       PoolEntry[]

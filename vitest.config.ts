@@ -6,12 +6,8 @@ export default defineConfig({
     environment: "node",
     fileParallelism: false,
     pool: "threads",
-    poolOptions: {
-      threads: {
-        singleThread: true,
-        isolate: true,
-      },
-    },
+    maxWorkers: 1,
+    isolate: true,
     testTimeout: 30000,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     env: {
