@@ -21,6 +21,8 @@ const EnvSchema = z.object({
   WITHDRAWAL_FEE_MAX_USDC: z.string().default("10"),
   WITHDRAWAL_MIN_USDC: z.string().default("1"),
   PLATFORM_TREASURY_SCOPE: z.string().default("treasury"),
+  ADMIN_API_TOKEN: z.string().min(32).optional(),
+  SENTRY_DSN: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

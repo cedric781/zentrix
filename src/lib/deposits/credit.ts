@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { recordTransaction, getUserAccount, getExternalAccount } from "@/lib/ledger";
 import { logger } from "@/lib/logger";
+import { isCircuitOpen } from "@/lib/circuit-breaker";
 
 export interface CreditDepositInput {
   userId: string;
@@ -15,7 +16,8 @@ export type CreditResult =
   | { kind: "credited"; depositId: string; ledgerTxId: string }
   | { kind: "already_credited"; depositId: string }
   | { kind: "skipped_zero" }
-  | { kind: "skipped_disabled" };
+  | { kind: "skipped_disabled" }
+  | { kind: "skipped_breaker" };
 
 /**
  * Idempotently credit an on-chain USDC deposit.
@@ -33,6 +35,11 @@ export async function creditDeposit(input: CreditDepositInput): Promise<CreditRe
   if (process.env.DEPOSITS_DISABLED === "true") {
     logger.warn({ userId, txSignature }, "deposit skipped: DEPOSITS_DISABLED");
     return { kind: "skipped_disabled" };
+  }
+
+  if (await isCircuitOpen("deposits")) {
+    logger.warn({ userId, txSignature }, "deposit skipped: circuit breaker open");
+    return { kind: "skipped_breaker" };
   }
 
   if (amountUnits <= 0n) {

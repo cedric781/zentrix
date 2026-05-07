@@ -12,6 +12,7 @@ import {
 } from "@/lib/ledger";
 import { getEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { isCircuitOpen } from "@/lib/circuit-breaker";
 import { WithdrawalError } from "./errors";
 import { HARDCODED_WITHDRAWALS_DISABLED } from "./kill-switch-hardcode";
 import { calculateWithdrawalFee } from "./fee";
@@ -56,10 +57,20 @@ export async function createWithdrawal(
   const env = getEnv();
 
   // ── Step 1: Kill switches ─────────────────────────────────────────────
+  // Layered defense: hardcoded fallback (R8) | env operator-toggle | circuit
+  // breaker (operational lever). All three converge on WITHDRAWALS_DISABLED
+  // so the API surface is uniform.
   if (env.WITHDRAWALS_DISABLED || HARDCODED_WITHDRAWALS_DISABLED) {
     throw new WithdrawalError(
       "WITHDRAWALS_DISABLED",
       "Withdrawals are temporarily disabled. Please try again later.",
+      503,
+    );
+  }
+  if (await isCircuitOpen("withdrawals")) {
+    throw new WithdrawalError(
+      "WITHDRAWALS_DISABLED",
+      "Withdrawals are temporarily paused (circuit breaker open).",
       503,
     );
   }

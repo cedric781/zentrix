@@ -20,6 +20,7 @@ import {
   type LedgerLine,
 } from "@/lib/ledger";
 import { logger } from "@/lib/logger";
+import { isCircuitOpen } from "@/lib/circuit-breaker";
 
 export interface ExecuteResult {
   withdrawalId: string;
@@ -42,6 +43,14 @@ export interface ExecuteResult {
 export async function executePendingWithdrawals(opts?: {
   limit?: number;
 }): Promise<ExecuteResult[]> {
+  // If recon (or an operator) tripped the withdrawals breaker, do not drain
+  // QUEUED rows on-chain. The intake gate already blocks new entries; this
+  // gate prevents already-queued items from going out while we investigate.
+  if (await isCircuitOpen("withdrawals")) {
+    logger.warn("executor skipped: withdrawals circuit breaker open");
+    return [];
+  }
+
   const limit = opts?.limit ?? 10;
   const queued = await prisma.withdrawal.findMany({
     where: { status: "QUEUED" },

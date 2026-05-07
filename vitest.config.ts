@@ -15,6 +15,7 @@ export default defineConfig({
       HELIUS_WEBHOOK_ID: "mock-webhook-id",
       USDC_MINT_ADDRESS: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       CRON_SECRET: "mock-cron-secret-with-at-least-32-characters-for-tests",
+      ADMIN_API_TOKEN: "mock-admin-token-with-at-least-32-characters-for-tests",
     },
     coverage: {
       provider: "v8",

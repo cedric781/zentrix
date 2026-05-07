@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/execute-withdrawals",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

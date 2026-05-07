@@ -24,6 +24,16 @@ async function main() {
   });
 
   console.log("Seeded singleton accounts: treasury, external");
+
+  const breakers = ["deposits", "withdrawals", "settlement"];
+  for (const key of breakers) {
+    await prisma.circuitBreaker.upsert({
+      where: { key },
+      create: { key, isOpen: false },
+      update: {},
+    });
+  }
+  console.log(`Seeded circuit breakers: ${breakers.join(", ")}`);
 }
 
 main()

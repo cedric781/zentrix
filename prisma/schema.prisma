@@ -194,3 +194,24 @@ model ReconciliationLog {
   @@index([checkedAt], map: "idx_recon_checked_at")
   @@map("reconciliation_logs")
 }
+
+/// Per-feature operational kill switch. Distinct from the R8 hardcoded
+/// fallback — that's a code-deploy switch for env-store outages. This is
+/// the day-to-day operator lever (flip via admin route).
+model CircuitBreaker {
+  id          String    @id @default(uuid())
+  /// Unique key, e.g. "withdrawals", "deposits", "settlement"
+  key         String    @unique
+  isOpen      Boolean   @default(false) @map("is_open")
+  /// When opened, why and by whom
+  reason      String?
+  openedAt    DateTime? @map("opened_at")
+  openedBy    String?   @map("opened_by")
+  closedAt    DateTime? @map("closed_at")
+  /// For automatic re-evaluation: trip count and last trip time
+  tripCount   Int       @default(0) @map("trip_count")
+  lastTripAt  DateTime? @map("last_trip_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("circuit_breakers")
+}
