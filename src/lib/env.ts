@@ -23,6 +23,14 @@ const EnvSchema = z.object({
   PLATFORM_TREASURY_SCOPE: z.string().default("treasury"),
   ADMIN_API_TOKEN: z.string().min(32).optional(),
   SENTRY_DSN: z.string().url().optional(),
+  POOL_MIN_BET_USDC: z.string().default("1"),
+  POOL_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(1000).default(200),
+  POOL_CREATOR_FEE_BPS_MIN: z.coerce.number().int().min(0).max(1000).default(100),
+  POOL_CREATOR_FEE_BPS_MAX: z.coerce.number().int().min(0).max(1000).default(500),
+  SETTLEMENT_DELAY_MIN_HOURS: z.coerce.number().int().min(1).max(720).default(24),
+  SETTLEMENT_DELAY_MAX_HOURS: z.coerce.number().int().min(1).max(720).default(48),
+  CREATOR_DECLARE_GRACE_HOURS: z.coerce.number().int().min(1).max(8760).default(168),
+  POOL_DISPUTE_HOLD_THRESHOLD_PCT: z.coerce.number().int().min(0).max(100).default(50),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

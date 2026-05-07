@@ -33,6 +33,8 @@ enum LedgerEntryType {
   SETTLEMENT_PAYOUT
   FEE_COLLECTION
   ADMIN_ADJUSTMENT
+  BET_PLACEMENT
+  BET_REFUND
 }
 
 enum DepositStatus {
@@ -63,6 +65,9 @@ model User {
   financialAccount FinancialAccount? @relation("UserFinancialAccount")
   deposits         Deposit[]
   withdrawals      Withdrawal[]
+  poolsCreated     Pool[]            @relation("PoolCreator")
+  poolEntries      PoolEntry[]
+  disputeLogs      DisputeLog[]
 
   @@map("users")
 }
@@ -77,9 +82,9 @@ model FinancialAccount {
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
-  user           User?           @relation("UserFinancialAccount", fields: [userId], references: [id])
-  creditEntries  LedgerEntry[]   @relation("CreditAccount")
-  debitEntries   LedgerEntry[]   @relation("DebitAccount")
+  user          User?         @relation("UserFinancialAccount", fields: [userId], references: [id])
+  creditEntries LedgerEntry[] @relation("CreditAccount")
+  debitEntries  LedgerEntry[] @relation("DebitAccount")
 
   @@index([accountType], map: "idx_financial_accounts_type")
   @@index([balanceUnits], map: "idx_financial_accounts_balance")
@@ -131,16 +136,16 @@ model LedgerEntry {
 }
 
 model Deposit {
-  id           String        @id @default(uuid())
-  userId       String        @map("user_id")
-  txSignature  String        @map("tx_signature")
-  logIndex     Int           @default(0) @map("log_index")
-  amountUnits  BigInt        @map("amount_units")
-  slot         BigInt
-  status       DepositStatus @default(PENDING)
-  ledgerTxId   String?       @map("ledger_tx_id")
-  createdAt    DateTime      @default(now()) @map("created_at")
-  creditedAt   DateTime?     @map("credited_at")
+  id          String        @id @default(uuid())
+  userId      String        @map("user_id")
+  txSignature String        @map("tx_signature")
+  logIndex    Int           @default(0) @map("log_index")
+  amountUnits BigInt        @map("amount_units")
+  slot        BigInt
+  status      DepositStatus @default(PENDING)
+  ledgerTxId  String?       @map("ledger_tx_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  creditedAt  DateTime?     @map("credited_at")
 
   user User @relation(fields: [userId], references: [id])
 
@@ -184,12 +189,12 @@ model IdempotencyKey {
 }
 
 model ReconciliationLog {
-  id                  String   @id @default(uuid())
-  checkedAt           DateTime @default(now()) @map("checked_at")
-  ledgerTotalUnits    BigInt   @map("ledger_total_units")
-  onChainTotalUnits   BigInt?  @map("on_chain_total_units")
-  delta               BigInt?
-  notes               String?
+  id                String   @id @default(uuid())
+  checkedAt         DateTime @default(now()) @map("checked_at")
+  ledgerTotalUnits  BigInt   @map("ledger_total_units")
+  onChainTotalUnits BigInt?  @map("on_chain_total_units")
+  delta             BigInt?
+  notes             String?
 
   @@index([checkedAt], map: "idx_recon_checked_at")
   @@map("reconciliation_logs")
@@ -199,19 +204,130 @@ model ReconciliationLog {
 /// fallback — that's a code-deploy switch for env-store outages. This is
 /// the day-to-day operator lever (flip via admin route).
 model CircuitBreaker {
-  id          String    @id @default(uuid())
+  id         String    @id @default(uuid())
   /// Unique key, e.g. "withdrawals", "deposits", "settlement"
-  key         String    @unique
-  isOpen      Boolean   @default(false) @map("is_open")
+  key        String    @unique
+  isOpen     Boolean   @default(false) @map("is_open")
   /// When opened, why and by whom
-  reason      String?
-  openedAt    DateTime? @map("opened_at")
-  openedBy    String?   @map("opened_by")
-  closedAt    DateTime? @map("closed_at")
+  reason     String?
+  openedAt   DateTime? @map("opened_at")
+  openedBy   String?   @map("opened_by")
+  closedAt   DateTime? @map("closed_at")
   /// For automatic re-evaluation: trip count and last trip time
-  tripCount   Int       @default(0) @map("trip_count")
-  lastTripAt  DateTime? @map("last_trip_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  tripCount  Int       @default(0) @map("trip_count")
+  lastTripAt DateTime? @map("last_trip_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
 
   @@map("circuit_breakers")
+}
+
+// ── PHASE 2: POOL WAGERING ─────────────────────────────────────────────────
+
+enum PoolStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  SETTLEMENT_PENDING
+  SETTLED
+  REFUNDED
+  CANCELLED
+}
+
+enum PoolSide {
+  A
+  B
+}
+
+enum PoolWinningSide {
+  A
+  B
+  VOID
+}
+
+enum SettlementStatus {
+  SCHEDULED
+  DISPUTED_HOLD
+  PAID_OUT
+  FAILED
+  REFUNDED_INSTEAD
+}
+
+model Pool {
+  id                   String           @id @default(uuid())
+  createdByUserId      String           @map("created_by_user_id")
+  title                String
+  description          String?
+  sideALabel           String           @map("side_a_label")
+  sideBLabel           String           @map("side_b_label")
+  bettingClosesAt      DateTime         @map("betting_closes_at")
+  settlementDelayHours Int              @default(24) @map("settlement_delay_hours")
+  status               PoolStatus       @default(DRAFT)
+  creatorFeeBps        Int              @default(100) @map("creator_fee_bps")
+  totalPotUnits        BigInt           @default(0) @map("total_pot_units")
+  totalSideAUnits      BigInt           @default(0) @map("total_side_a_units")
+  totalSideBUnits      BigInt           @default(0) @map("total_side_b_units")
+  winningSide          PoolWinningSide? @map("winning_side")
+  declaredAt           DateTime?        @map("declared_at")
+  settledAt            DateTime?        @map("settled_at")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+
+  creator       User           @relation("PoolCreator", fields: [createdByUserId], references: [id])
+  entries       PoolEntry[]
+  disputes      DisputeLog[]
+  settlementJob SettlementJob?
+
+  @@index([status], map: "idx_pools_status")
+  @@index([bettingClosesAt], map: "idx_pools_betting_closes_at")
+  @@index([createdByUserId, createdAt], map: "idx_pools_creator_created")
+  @@map("pools")
+}
+
+model PoolEntry {
+  id          String   @id @default(uuid())
+  poolId      String   @map("pool_id")
+  userId      String   @map("user_id")
+  side        PoolSide
+  amountUnits BigInt   @map("amount_units")
+  ledgerTxId  String?  @map("ledger_tx_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  pool Pool @relation(fields: [poolId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([poolId, userId], map: "uq_pool_entries_pool_user")
+  @@index([poolId, side], map: "idx_pool_entries_pool_side")
+  @@index([userId, createdAt], map: "idx_pool_entries_user_created")
+  @@map("pool_entries")
+}
+
+model DisputeLog {
+  id        String   @id @default(uuid())
+  poolId    String   @map("pool_id")
+  userId    String   @map("user_id")
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  pool Pool @relation(fields: [poolId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([poolId, createdAt], map: "idx_dispute_logs_pool_created")
+  @@index([userId, createdAt], map: "idx_dispute_logs_user_created")
+  @@map("dispute_logs")
+}
+
+model SettlementJob {
+  id             String           @id @default(uuid())
+  poolId         String           @unique @map("pool_id")
+  declaredWinner PoolWinningSide  @map("declared_winner")
+  declaredAt     DateTime         @map("declared_at")
+  scheduledFor   DateTime         @map("scheduled_for")
+  executedAt     DateTime?        @map("executed_at")
+  status         SettlementStatus @default(SCHEDULED)
+  failReason     String?          @map("fail_reason")
+
+  pool Pool @relation(fields: [poolId], references: [id])
+
+  @@index([status, scheduledFor], map: "idx_settlement_jobs_status_scheduled")
+  @@map("settlement_jobs")
 }
