@@ -94,3 +94,53 @@ export async function createPool(input: CreatePoolInput): Promise<Pool> {
     },
   });
 }
+
+export interface PublishPoolInput {
+  poolId: string;
+  creatorId: string;
+}
+
+/**
+ * Publish a DRAFT pool, transitioning it to OPEN.
+ *
+ * Guards: pool must exist (404), caller must be the creator (403), and
+ * current status must be DRAFT (409). `bettingClosesAt` is intentionally
+ * NOT re-checked here — `createPool` already enforced the 1h-90d window,
+ * and `placeBet` (P10) performs the live deadline check at bet time.
+ * Re-checking here would surprise creators with a different error than
+ * they got at create-time if they dawdled past the deadline window.
+ *
+ * On success: sets status to OPEN and stamps `publishedAt = now()`.
+ */
+export async function publishPool(input: PublishPoolInput): Promise<Pool> {
+  const pool = await prisma.pool.findUnique({ where: { id: input.poolId } });
+  if (!pool) {
+    throw new PoolError("POOL_NOT_FOUND", "Pool not found", 404, {
+      poolId: input.poolId,
+    });
+  }
+  if (pool.createdByUserId !== input.creatorId) {
+    throw new PoolError(
+      "POOL_NOT_OWNED_BY_CALLER",
+      "Only the pool creator can publish",
+      403,
+      { poolId: input.poolId, creatorId: input.creatorId },
+    );
+  }
+  if (pool.status !== "DRAFT") {
+    throw new PoolError(
+      "POOL_INVALID_STATUS",
+      "Only DRAFT pools can be published",
+      409,
+      { poolId: input.poolId, currentStatus: pool.status },
+    );
+  }
+
+  return prisma.pool.update({
+    where: { id: input.poolId },
+    data: {
+      status: "OPEN",
+      publishedAt: new Date(),
+    },
+  });
+}
