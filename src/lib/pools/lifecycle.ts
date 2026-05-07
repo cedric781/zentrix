@@ -200,3 +200,60 @@ export async function closePool(input: ClosePoolInput): Promise<Pool> {
     },
   });
 }
+
+export interface CancelPoolInput {
+  poolId: string;
+  creatorId: string;
+}
+
+/**
+ * Cancel a DRAFT pool, transitioning it to CANCELLED.
+ *
+ * P09 supports the DRAFT-only cancel path. Pools that have already been
+ * published (OPEN) or closed (CLOSED) may have placed bets, so cancelling
+ * them requires per-entry refund logic (LedgerTransaction with
+ * BET_REFUND entries, escrow drain). That refund-aware path lands in
+ * PROMPT_15 as `cancelPoolWithRefund` and will set status to REFUNDED.
+ *
+ * Guards:
+ * 1. Pool exists -> POOL_NOT_FOUND (404)
+ * 2. Caller is creator -> POOL_NOT_OWNED_BY_CALLER (403)
+ * 3. Status is DRAFT -> POOL_HAS_BETS_CANNOT_CANCEL (409)
+ *
+ * No `cancelledAt` column is written; the schema does not yet carry one
+ * and `updatedAt` is sufficient for MVP. If cancellation timestamps are
+ * later required they will be added alongside the refund-flow work.
+ *
+ * On success: sets status to CANCELLED.
+ */
+export async function cancelPool(input: CancelPoolInput): Promise<Pool> {
+  const pool = await prisma.pool.findUnique({ where: { id: input.poolId } });
+  if (!pool) {
+    throw new PoolError("POOL_NOT_FOUND", "Pool not found", 404, {
+      poolId: input.poolId,
+    });
+  }
+  if (pool.createdByUserId !== input.creatorId) {
+    throw new PoolError(
+      "POOL_NOT_OWNED_BY_CALLER",
+      "Only the pool creator can cancel",
+      403,
+      { poolId: input.poolId, creatorId: input.creatorId },
+    );
+  }
+  if (pool.status !== "DRAFT") {
+    throw new PoolError(
+      "POOL_HAS_BETS_CANNOT_CANCEL",
+      "Cannot cancel pool that has been published. Use cancelPoolWithRefund (P15) for OPEN/CLOSED pools with bets.",
+      409,
+      { poolId: input.poolId, currentStatus: pool.status },
+    );
+  }
+
+  return prisma.pool.update({
+    where: { id: input.poolId },
+    data: {
+      status: "CANCELLED",
+    },
+  });
+}
