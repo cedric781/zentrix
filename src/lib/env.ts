@@ -31,6 +31,8 @@ const EnvSchema = z.object({
   SETTLEMENT_DELAY_MAX_HOURS: z.coerce.number().int().min(1).max(720).default(48),
   CREATOR_DECLARE_GRACE_HOURS: z.coerce.number().int().min(1).max(8760).default(168),
   POOL_DISPUTE_HOLD_THRESHOLD_PCT: z.coerce.number().int().min(0).max(100).default(50),
+  BET_MIN_USDC_UNITS: z.coerce.bigint().default(1_000_000n),
+  BET_MAX_USDC_UNITS: z.coerce.bigint().default(10_000_000_000n),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

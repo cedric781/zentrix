@@ -27,6 +27,8 @@ export default defineConfig({
       SETTLEMENT_DELAY_MAX_HOURS: "48",
       CREATOR_DECLARE_GRACE_HOURS: "168",
       POOL_DISPUTE_HOLD_THRESHOLD_PCT: "50",
+      BET_MIN_USDC_UNITS: "1000000",
+      BET_MAX_USDC_UNITS: "10000000000",
     },
     coverage: {
       provider: "v8",

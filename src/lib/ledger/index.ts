@@ -8,6 +8,7 @@ export {
   betScopeKey,
   TREASURY_SCOPE_KEY,
   EXTERNAL_SCOPE_KEY,
+  type TxClient,
 } from "./accounts";
 export {
   recordTransaction,
