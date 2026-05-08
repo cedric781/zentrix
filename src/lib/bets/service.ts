@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import { Prisma, type Bet } from "@prisma/client";
+import { Prisma, type Bet, type BetResultClaim, type BetParticipantConfirmation } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   recordTransaction,
@@ -12,6 +12,7 @@ import { getEnv } from "@/lib/env";
 import { BetError } from "./errors";
 import { getOrCreateBetEscrowAccount } from "./escrow";
 import { safeHashCompare } from "@/lib/crypto/safe-compare";
+import { settleBet } from "./settlement";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN_HEX = /^[0-9a-f]{64}$/;
@@ -51,9 +52,35 @@ export interface CancelBetResult {
   bet: Bet;
 }
 
+export interface ProposeResultInput {
+  betId: string;
+  callerId: string;
+  claimedWinnerId: string;
+  note?: string;
+  idempotencyKey: string;
+}
+
+export interface ProposeResultResult {
+  bet: Bet;
+  claim: BetResultClaim;
+}
+
+export interface ConfirmResultInput {
+  betId: string;
+  callerId: string;
+  decision: "CONFIRM_WINNER" | "DISAGREE";
+  claimedWinnerId?: string;
+  idempotencyKey: string;
+}
+
+export interface ConfirmResultResult {
+  bet: Bet;
+  confirmation: BetParticipantConfirmation;
+}
+
 // ── helpers ──────────────────────────────────────────────────────────
 
-async function lockBet(tx: TxClient, betId: string): Promise<{ id: string }> {
+export async function lockBet(tx: TxClient, betId: string): Promise<{ id: string }> {
   const rows = (await tx.$queryRaw`
     SELECT id FROM bets WHERE id = ${betId} FOR UPDATE
   `) as Array<{ id: string }>;
@@ -569,5 +596,296 @@ export async function cancelBet(input: CancelBetInput): Promise<CancelBetResult>
 
     const finalBet = await tx.bet.findUniqueOrThrow({ where: { id: bet.id } });
     return { bet: finalBet };
+  });
+}
+
+// ── proposeResult ────────────────────────────────────────────────────
+
+const POOL_ATTACHED_REJECT_MSG =
+  "pool-attached bets settle via match result (PROMPT_12), not propose/confirm";
+
+export async function proposeResult(
+  input: ProposeResultInput,
+): Promise<ProposeResultResult> {
+  const { betId, callerId, claimedWinnerId, note, idempotencyKey } = input;
+
+  assertUuidV4(idempotencyKey, "idempotencyKey");
+  if (note !== undefined && note.length > 1000) {
+    throw new BetError("BET_INVALID_INPUT", "note exceeds 1000 chars", 400);
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    // 1. Natural idempotency: existing claim by this caller on this bet.
+    const existingClaim = await tx.betResultClaim.findUnique({
+      where: { betId_claimedById: { betId, claimedById: callerId } },
+    });
+    if (existingClaim) {
+      const existingBet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
+      return { bet: existingBet, claim: existingClaim };
+    }
+
+    // 2. Lock + refetch bet.
+    await lockBet(tx, betId);
+    const bet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
+
+    // 3. Guards.
+    if (bet.poolId !== null) {
+      throw new BetError("BET_INVALID_STATUS", POOL_ATTACHED_REJECT_MSG, 409);
+    }
+    if (bet.status !== "ACTIVE") {
+      throw new BetError(
+        "BET_INVALID_STATUS",
+        `Cannot propose result from status=${bet.status}`,
+        409,
+      );
+    }
+    if (bet.expiresAt.getTime() < Date.now()) {
+      throw new BetError("BET_DEADLINE_PASSED", "Bet expiration passed", 409);
+    }
+    if (callerId !== bet.createdById && callerId !== bet.opponentUserId) {
+      throw new BetError("BET_NOT_PARTICIPANT", "Caller is not a bet participant", 403);
+    }
+    if (
+      claimedWinnerId !== bet.createdById &&
+      claimedWinnerId !== bet.opponentUserId
+    ) {
+      throw new BetError(
+        "BET_INVALID_INPUT",
+        "claimedWinnerId must be a bet participant",
+        400,
+      );
+    }
+
+    // 4. Insert claim. Catch P2002 race.
+    let claim: BetResultClaim;
+    try {
+      claim = await tx.betResultClaim.create({
+        data: {
+          betId,
+          claimedById: callerId,
+          claimedWinnerId,
+          note: note ?? null,
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        const raceClaim = await tx.betResultClaim.findUnique({
+          where: { betId_claimedById: { betId, claimedById: callerId } },
+        });
+        if (raceClaim) {
+          const raceBet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
+          return { bet: raceBet, claim: raceClaim };
+        }
+      }
+      throw e;
+    }
+
+    // 5. Promote ACTIVE → RESULT_PROPOSED with version-guard.
+    const confirmDeadline = new Date(Date.now() + 24 * 3600_000);
+    const updated = await tx.bet.updateMany({
+      where: { id: bet.id, version: bet.version, status: "ACTIVE" },
+      data: {
+        status: "RESULT_PROPOSED",
+        resultStatus: "PROPOSED",
+        winnerId: claimedWinnerId,
+        confirmDeadline,
+        version: bet.version + 1,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new BetError(
+        "BET_VERSION_MISMATCH",
+        `Bet ${bet.id} concurrently mutated`,
+        409,
+      );
+    }
+
+    // 6. Audit transition.
+    await tx.betStateTransition.create({
+      data: {
+        betId: bet.id,
+        fromStatus: "ACTIVE",
+        toStatus: "RESULT_PROPOSED",
+        actorId: callerId,
+        actorType: "USER",
+        metadata: {
+          claimedWinnerId,
+          claimId: claim.id,
+          note: note ?? null,
+        },
+      },
+    });
+
+    const finalBet = await tx.bet.findUniqueOrThrow({ where: { id: bet.id } });
+    return { bet: finalBet, claim };
+  });
+}
+
+// ── confirmResult ────────────────────────────────────────────────────
+
+export async function confirmResult(
+  input: ConfirmResultInput,
+): Promise<ConfirmResultResult> {
+  const { betId, callerId, decision, claimedWinnerId, idempotencyKey } = input;
+
+  assertUuidV4(idempotencyKey, "idempotencyKey");
+  if (decision !== "CONFIRM_WINNER" && decision !== "DISAGREE") {
+    throw new BetError(
+      "BET_INVALID_INPUT",
+      `decision must be CONFIRM_WINNER or DISAGREE`,
+      400,
+    );
+  }
+  if (decision === "DISAGREE" && !claimedWinnerId) {
+    throw new BetError(
+      "BET_INVALID_INPUT",
+      "DISAGREE requires claimedWinnerId",
+      400,
+    );
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    // 1. Natural-DB-state idempotency: existing confirmation by this caller.
+    const existingConfirmation = await tx.betParticipantConfirmation.findFirst({
+      where: { betId, userId: callerId },
+    });
+    if (existingConfirmation) {
+      const existingBet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
+      return { bet: existingBet, confirmation: existingConfirmation };
+    }
+
+    // 2. Lock + refetch bet.
+    await lockBet(tx, betId);
+    const bet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
+
+    // 3. Guards.
+    if (bet.poolId !== null) {
+      throw new BetError("BET_INVALID_STATUS", POOL_ATTACHED_REJECT_MSG, 409);
+    }
+    if (bet.status !== "RESULT_PROPOSED") {
+      throw new BetError(
+        "BET_INVALID_STATUS",
+        `Cannot confirm from status=${bet.status}`,
+        409,
+      );
+    }
+    if (bet.confirmDeadline && bet.confirmDeadline.getTime() < Date.now()) {
+      throw new BetError("BET_DEADLINE_PASSED", "Confirm deadline passed", 409);
+    }
+    if (callerId !== bet.createdById && callerId !== bet.opponentUserId) {
+      throw new BetError("BET_NOT_PARTICIPANT", "Caller is not a bet participant", 403);
+    }
+
+    const claim = await tx.betResultClaim.findFirst({ where: { betId } });
+    if (!claim) {
+      throw new BetError(
+        "BET_RESULT_CLAIM_NOT_FOUND",
+        "No result claim exists for this bet",
+        404,
+      );
+    }
+    if (claim.claimedById === callerId) {
+      throw new BetError(
+        "BET_CONFIRM_BY_CLAIMANT",
+        "Claimant cannot confirm their own claim",
+        403,
+      );
+    }
+
+    if (decision === "CONFIRM_WINNER") {
+      const confirmation = await tx.betParticipantConfirmation.create({
+        data: {
+          betId,
+          userId: callerId,
+          decision: "CONFIRM_WINNER",
+          claimedWinnerId: claim.claimedWinnerId,
+        },
+      });
+
+      await tx.betParticipant.updateMany({
+        where: { betId },
+        data: { hasConfirmed: true, confirmedAt: new Date() },
+      });
+
+      if (!claim.claimedWinnerId) {
+        throw new BetError(
+          "BET_INVALID_INPUT",
+          "claim has no claimedWinnerId — cannot settle",
+          400,
+        );
+      }
+
+      await settleBet(tx, {
+        bet,
+        winnerId: claim.claimedWinnerId,
+        ledgerIdempotencyKey: `bet-settle:${bet.id}`,
+        fromStatus: "RESULT_PROPOSED",
+        actorId: callerId,
+      });
+
+      const finalBet = await tx.bet.findUniqueOrThrow({ where: { id: bet.id } });
+      return { bet: finalBet, confirmation };
+    }
+
+    // DISAGREE path.
+    if (
+      claimedWinnerId !== bet.createdById &&
+      claimedWinnerId !== bet.opponentUserId
+    ) {
+      throw new BetError(
+        "BET_INVALID_INPUT",
+        "claimedWinnerId must be a bet participant",
+        400,
+      );
+    }
+    if (claimedWinnerId === claim.claimedWinnerId) {
+      throw new BetError(
+        "BET_INVALID_INPUT",
+        "DISAGREE with same winner is functionally CONFIRM_WINNER; use that decision",
+        400,
+      );
+    }
+
+    const confirmation = await tx.betParticipantConfirmation.create({
+      data: {
+        betId,
+        userId: callerId,
+        decision: "DISAGREE",
+        claimedWinnerId,
+      },
+    });
+
+    const updated = await tx.bet.updateMany({
+      where: { id: bet.id, version: bet.version, status: "RESULT_PROPOSED" },
+      data: {
+        status: "DISPUTED",
+        resultStatus: "DISPUTED",
+        version: bet.version + 1,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new BetError(
+        "BET_VERSION_MISMATCH",
+        `Bet ${bet.id} concurrently mutated`,
+        409,
+      );
+    }
+
+    await tx.betStateTransition.create({
+      data: {
+        betId: bet.id,
+        fromStatus: "RESULT_PROPOSED",
+        toStatus: "DISPUTED",
+        actorId: callerId,
+        actorType: "USER",
+        metadata: {
+          confirmationId: confirmation.id,
+          disagreedWinnerId: claimedWinnerId,
+        },
+      },
+    });
+
+    const finalBet = await tx.bet.findUniqueOrThrow({ where: { id: bet.id } });
+    return { bet: finalBet, confirmation };
   });
 }

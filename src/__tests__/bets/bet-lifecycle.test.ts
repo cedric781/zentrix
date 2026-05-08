@@ -109,6 +109,10 @@ async function fullCleanup() {
   await prisma.user.deleteMany({
     where: { privyId: { startsWith: PRIVY_PREFIX } },
   });
+  await prisma.financialAccount.updateMany({
+    where: { scopeKey: { in: ["treasury", "external"] } },
+    data: { balanceUnits: 0n },
+  });
 }
 
 beforeAll(async () => {
