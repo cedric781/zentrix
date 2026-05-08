@@ -1,0 +1,13 @@
+import "server-only";
+
+export { applyBps } from "@/lib/money/units";
+
+export const FEES = {
+  PLATFORM_BPS: 200,
+  DISPUTE_RESOLUTION_BPS: 1500,
+  DISPUTE_DEPOSIT_BPS: 1000,
+  DISPUTE_DEPOSIT_MIN_USDC_UNITS: 500_000n,
+  WITHDRAWAL_BPS: 100,
+  WITHDRAWAL_MIN_USDC_UNITS: 100_000n,
+  WITHDRAWAL_MAX_USDC_UNITS: 5_000_000n,
+} as const;

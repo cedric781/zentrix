@@ -52,6 +52,80 @@ enum WithdrawalStatus {
   CANCELLED
 }
 
+// ── ENUMS: BET / POOL / DISPUTE (P08, ADR-0003) ────────────────────────────
+
+enum BetStatus {
+  DRAFT
+  OPEN
+  ACTIVE
+  RESULT_PROPOSED
+  AWAITING_CONFIRMATION
+  DISPUTED
+  SETTLED
+  CANCELLED
+  EXPIRED
+  VOID
+}
+
+enum SettlementMode {
+  PROOF_CONFIRM
+  // ARBITER_REQUIRED, AUTO_VERIFY post-MVP — separate ADR
+}
+
+enum ResultStatus {
+  PENDING
+  PROPOSED
+  CONFIRMED
+  DISPUTED
+  OVERRIDDEN
+}
+
+enum MatchStatus {
+  SCHEDULED
+  RESULT_SUBMITTED
+  SETTLED
+  DISPUTED
+}
+
+enum PoolStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  SETTLED
+  CANCELLED
+}
+
+enum DisputeStatus {
+  OPEN
+  EVIDENCE_PHASE
+  ADMIN_REVIEW
+  RESOLVED
+}
+
+enum DisputeOutcome {
+  CREATOR_WINS
+  OPPONENT_WINS
+  VOID
+}
+
+enum ReputationTier {
+  NORMAL
+  RESTRICTED
+  FLAGGED
+}
+
+enum EvidenceType {
+  TEXT
+  URL
+  IMAGE
+  VIDEO
+}
+
+enum ConfirmationDecision {
+  CONFIRM_WINNER
+  DISAGREE
+}
+
 // ── MODELS ─────────────────────────────────────────────────────────────────
 
 model User {
@@ -65,6 +139,25 @@ model User {
   financialAccount FinancialAccount? @relation("UserFinancialAccount")
   deposits         Deposit[]
   withdrawals      Withdrawal[]
+
+  // Bet relations (P08)
+  betsCreated                  Bet[]                        @relation("BetCreator")
+  betsOpponent                 Bet[]                        @relation("BetOpponent")
+  betsWon                      Bet[]                        @relation("BetWinner")
+  betParticipants              BetParticipant[]
+  betInvitesUsed               BetInvite[]
+  betEvidence                  BetEvidence[]
+  betStateTransitions          BetStateTransition[]
+  confirmations                BetParticipantConfirmation[] @relation("ConfirmationActor")
+  confirmationsClaimedAsWinner BetParticipantConfirmation[] @relation("ConfirmationClaimedWinner")
+  resultClaims                 BetResultClaim[]             @relation("ResultClaimActor")
+  resultClaimsAsWinner         BetResultClaim[]             @relation("ResultClaimWinner")
+  matchEvidence                MatchEvidence[]
+  poolsCreated                 Pool[]                       @relation("PoolCreator")
+  disputesOpened               Dispute[]                    @relation("DisputeOpener")
+  disputesResolved             Dispute[]                    @relation("DisputeResolver")
+  reputation                   UserReputation?
+  idempotencyKeys              IdempotencyKey[]
 
   @@map("users")
 }
@@ -177,11 +270,25 @@ model Withdrawal {
 }
 
 model IdempotencyKey {
+  // Bestaand (P05/P06 backward-compat — nooit verwijderen):
   key       String   @id
   scope     String
   createdAt DateTime @default(now()) @map("created_at")
 
+  // Nieuw in P08 — allemaal nullable, alleen gebruikt door bet/dispute routes:
+  userId       String?   @map("user_id")
+  route        String?
+  statusCode   Int?      @map("status_code")
+  responseJson Json?     @map("response_json")
+  completedAt  DateTime? @map("completed_at")
+  expiresAt    DateTime? @map("expires_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@unique([userId, key], map: "uq_idem_user_key")
   @@index([scope, createdAt], map: "idx_idem_scope_created")
+  @@index([expiresAt], map: "idx_idem_expires")
+  @@index([userId, route, createdAt], map: "idx_idem_user_route_created")
   @@map("idempotency_keys")
 }
 
@@ -218,7 +325,263 @@ model CircuitBreaker {
   @@map("circuit_breakers")
 }
 
-// ── PHASE 2: POOL WAGERING ─────────────────────────────────────────────────
-// Parimutuel pool model removed per ADR-0003. Replacement schema (1v1 Bet
-// + Pool-as-tournament-container) lands in PROMPT_08 of the post-refactor
-// sequence. See docs/REFACTOR_PLAN.md.
+// ── PHASE 2: 1v1 P2P BETS + POOL CONTAINER (P08, ADR-0003) ─────────────────
+
+model Bet {
+  id             String  @id @default(uuid())
+  createdById    String  @map("created_by_id")
+  opponentUserId String? @map("opponent_user_id")
+  creatorSide    String  @map("creator_side")
+  acceptorSide   String? @map("acceptor_side")
+  stakeUnits     BigInt  @map("stake_units")
+
+  status         BetStatus      @default(DRAFT)
+  settlementMode SettlementMode @default(PROOF_CONFIRM) @map("settlement_mode")
+  resultStatus   ResultStatus   @default(PENDING) @map("result_status")
+  winnerId       String?        @map("winner_id")
+
+  version             Int       @default(0)
+  expiresAt           DateTime  @map("expires_at")
+  confirmDeadline     DateTime? @map("confirm_deadline")
+  disputeWindowEndsAt DateTime? @map("dispute_window_ends_at")
+
+  settledAt   DateTime? @map("settled_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  voidedAt    DateTime? @map("voided_at")
+
+  poolId  String? @map("pool_id")
+  matchId String? @map("match_id")
+
+  createdByLedgerTxId String? @map("created_by_ledger_tx_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy        User                         @relation("BetCreator", fields: [createdById], references: [id])
+  opponent         User?                        @relation("BetOpponent", fields: [opponentUserId], references: [id])
+  winner           User?                        @relation("BetWinner", fields: [winnerId], references: [id])
+  pool             Pool?                        @relation(fields: [poolId], references: [id])
+  match            Match?                       @relation(fields: [matchId], references: [id])
+  participants     BetParticipant[]
+  invite           BetInvite?
+  evidence         BetEvidence[]
+  stateTransitions BetStateTransition[]
+  confirmations    BetParticipantConfirmation[]
+  resultClaims     BetResultClaim[]
+  disputes         Dispute[]
+
+  @@index([status], map: "idx_bets_status")
+  @@index([createdById, createdAt], map: "idx_bets_creator_created")
+  @@index([opponentUserId, createdAt], map: "idx_bets_opponent_created")
+  @@index([poolId, status], map: "idx_bets_pool_status")
+  @@index([matchId, status], map: "idx_bets_match_status")
+  @@index([expiresAt], map: "idx_bets_expires_at")
+  @@map("bets")
+}
+
+model BetParticipant {
+  id           String    @id @default(uuid())
+  betId        String    @map("bet_id")
+  userId       String    @map("user_id")
+  side         String
+  hasConfirmed Boolean   @default(false) @map("has_confirmed")
+  confirmedAt  DateTime? @map("confirmed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  bet  Bet  @relation(fields: [betId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([betId, side], map: "uq_bet_participants_bet_side")
+  @@unique([betId, userId], map: "uq_bet_participants_bet_user")
+  @@index([userId, createdAt], map: "idx_bet_participants_user_created")
+  @@map("bet_participants")
+}
+
+model BetInvite {
+  id        String    @id @default(uuid())
+  betId     String    @unique @map("bet_id")
+  tokenHash String    @unique @map("token_hash")
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  usedById  String?   @map("used_by_id")
+
+  bet    Bet   @relation(fields: [betId], references: [id], onDelete: Cascade)
+  usedBy User? @relation(fields: [usedById], references: [id])
+
+  @@index([expiresAt], map: "idx_bet_invites_expires")
+  @@map("bet_invites")
+}
+
+model BetEvidence {
+  id           String       @id @default(uuid())
+  betId        String       @map("bet_id")
+  uploadedById String       @map("uploaded_by_id")
+  type         EvidenceType
+  fileUrl      String?      @map("file_url")
+  mimeType     String?      @map("mime_type")
+  contentHash  String       @map("content_hash")
+  description  String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  bet        Bet  @relation(fields: [betId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@unique([betId, contentHash], map: "uq_bet_evidence_bet_hash")
+  @@index([uploadedById, createdAt], map: "idx_bet_evidence_user_created")
+  @@map("bet_evidence")
+}
+
+model BetStateTransition {
+  id         String    @id @default(uuid())
+  betId      String    @map("bet_id")
+  fromStatus BetStatus @map("from_status")
+  toStatus   BetStatus @map("to_status")
+  actorId    String?   @map("actor_id")
+  actorType  String    @map("actor_type")
+  metadata   Json?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  bet   Bet   @relation(fields: [betId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([betId, createdAt], map: "idx_bet_state_transitions_bet_created")
+  @@index([actorId, createdAt], map: "idx_bet_state_transitions_actor_created")
+  @@map("bet_state_transitions")
+}
+
+model BetParticipantConfirmation {
+  id              String               @id @default(uuid())
+  betId           String               @map("bet_id")
+  userId          String               @map("user_id")
+  decision        ConfirmationDecision
+  claimedWinnerId String?              @map("claimed_winner_id")
+  createdAt       DateTime             @default(now()) @map("created_at")
+
+  bet           Bet   @relation(fields: [betId], references: [id], onDelete: Cascade)
+  user          User  @relation("ConfirmationActor", fields: [userId], references: [id])
+  claimedWinner User? @relation("ConfirmationClaimedWinner", fields: [claimedWinnerId], references: [id])
+
+  @@index([betId, createdAt], map: "idx_bet_confirmations_bet_created")
+  @@index([userId, createdAt], map: "idx_bet_confirmations_user_created")
+  @@map("bet_participant_confirmations")
+}
+
+model BetResultClaim {
+  id              String   @id @default(uuid())
+  betId           String   @map("bet_id")
+  claimedById     String   @map("claimed_by_id")
+  claimedWinnerId String?  @map("claimed_winner_id")
+  note            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  bet           Bet   @relation(fields: [betId], references: [id], onDelete: Cascade)
+  claimedBy     User  @relation("ResultClaimActor", fields: [claimedById], references: [id])
+  claimedWinner User? @relation("ResultClaimWinner", fields: [claimedWinnerId], references: [id])
+
+  @@unique([betId, claimedById], map: "uq_bet_result_claims_bet_user")
+  @@index([betId, createdAt], map: "idx_bet_result_claims_bet_created")
+  @@map("bet_result_claims")
+}
+
+model Pool {
+  id              String     @id @default(uuid())
+  createdById     String     @map("created_by_id")
+  title           String
+  description     String?
+  status          PoolStatus @default(DRAFT)
+  bettingClosesAt DateTime   @map("betting_closes_at")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  createdBy User    @relation("PoolCreator", fields: [createdById], references: [id])
+  matches   Match[]
+  bets      Bet[]
+
+  @@index([status], map: "idx_pools_status")
+  @@index([createdById, createdAt], map: "idx_pools_creator_created")
+  @@map("pools")
+}
+
+model Match {
+  id                  String      @id @default(uuid())
+  poolId              String      @map("pool_id")
+  title               String
+  description         String?
+  eventTime           DateTime?   @map("event_time")
+  status              MatchStatus @default(SCHEDULED)
+  winnerSide          String?     @map("winner_side")
+  submittedAt         DateTime?   @map("submitted_at")
+  disputeWindowEndsAt DateTime?   @map("dispute_window_ends_at")
+  settledAt           DateTime?   @map("settled_at")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  pool     Pool            @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  bets     Bet[]
+  evidence MatchEvidence[]
+
+  @@index([poolId, status], map: "idx_matches_pool_status")
+  @@index([eventTime], map: "idx_matches_event_time")
+  @@map("matches")
+}
+
+model MatchEvidence {
+  id           String       @id @default(uuid())
+  matchId      String       @map("match_id")
+  uploadedById String       @map("uploaded_by_id")
+  type         EvidenceType
+  fileUrl      String?      @map("file_url")
+  mimeType     String?      @map("mime_type")
+  contentHash  String       @map("content_hash")
+  description  String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  match      Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  uploadedBy User  @relation(fields: [uploadedById], references: [id])
+
+  @@unique([matchId, contentHash], map: "uq_match_evidence_match_hash")
+  @@index([uploadedById, createdAt], map: "idx_match_evidence_user_created")
+  @@map("match_evidence")
+}
+
+model Dispute {
+  id                String          @id @default(uuid())
+  betId             String          @map("bet_id")
+  openedById        String          @map("opened_by_id")
+  reason            String
+  depositLedgerTxId String?         @map("deposit_ledger_tx_id")
+  status            DisputeStatus   @default(OPEN)
+  outcome           DisputeOutcome?
+  resolvedById      String?         @map("resolved_by_id")
+  resolvedAt        DateTime?       @map("resolved_at")
+  adminNotes        String?         @map("admin_notes")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  bet        Bet   @relation(fields: [betId], references: [id], onDelete: Cascade)
+  openedBy   User  @relation("DisputeOpener", fields: [openedById], references: [id])
+  resolvedBy User? @relation("DisputeResolver", fields: [resolvedById], references: [id])
+
+  @@index([betId, status], map: "idx_disputes_bet_status")
+  @@index([openedById, createdAt], map: "idx_disputes_opener_created")
+  @@index([status, createdAt], map: "idx_disputes_status_created")
+  @@map("disputes")
+}
+
+model UserReputation {
+  id             String         @id @default(uuid())
+  userId         String         @unique @map("user_id")
+  score          Int            @default(100)
+  disputesOpened Int            @default(0) @map("disputes_opened")
+  disputesWon    Int            @default(0) @map("disputes_won")
+  disputesLost   Int            @default(0) @map("disputes_lost")
+  tier           ReputationTier @default(NORMAL)
+  lastUpdatedAt  DateTime       @default(now()) @map("last_updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([tier], map: "idx_user_reputation_tier")
+  @@index([score], map: "idx_user_reputation_score")
+  @@map("user_reputations")
+}
