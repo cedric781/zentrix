@@ -14,7 +14,7 @@ export interface SettleBetInput {
   bet: Bet;
   winnerId: string;
   ledgerIdempotencyKey: string;
-  fromStatus: "RESULT_PROPOSED" | "DISPUTED";
+  fromStatus: "RESULT_PROPOSED" | "DISPUTED" | "ACTIVE";
   actorId: string | null;
 }
 
@@ -70,6 +70,7 @@ export async function settleBet(
     data: {
       status: "SETTLED",
       resultStatus: "CONFIRMED",
+      winnerId,
       settledAt: new Date(),
       version: bet.version + 1,
     },
@@ -82,13 +83,22 @@ export async function settleBet(
     );
   }
 
+  let actorType: string;
+  if (fromStatus === "ACTIVE" && actorId !== null) {
+    actorType = "POOL_CREATOR_RESOLVE";
+  } else if (actorId === null) {
+    actorType = "SYSTEM";
+  } else {
+    actorType = "USER";
+  }
+
   await tx.betStateTransition.create({
     data: {
       betId: bet.id,
       fromStatus,
       toStatus: "SETTLED",
       actorId,
-      actorType: actorId === null ? "SYSTEM" : "USER",
+      actorType,
       metadata: {
         ledgerTxId: ledgerResult.transaction.id,
         winnerPayout: winnerPayout.toString(),

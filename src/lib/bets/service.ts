@@ -187,6 +187,13 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
         throw new BetError("BET_INVALID_INPUT", `Pool ${poolId} not found`, 400);
       }
       if (pool.status !== "OPEN") {
+        if (matchId) {
+          throw new BetError(
+            "BET_POOL_MATCH_NOT_OPEN",
+            `match's pool is in status=${pool.status}, must be OPEN to attach bets`,
+            409,
+          );
+        }
         throw new BetError(
           "BET_INVALID_STATUS",
           `Pool not accepting bets (status=${pool.status})`,
