@@ -5,6 +5,7 @@ import { WithdrawalError } from "@/lib/withdrawals/errors";
 import { creditDeposit } from "@/lib/deposits/credit";
 import { ONE_USDC } from "@/lib/money/units";
 import { _resetEnvCache } from "@/lib/env";
+import { resetCircuit, _resetCircuitBreakerCache } from "@/lib/circuit-breaker";
 
 async function cleanupAll() {
   // Order matters: child rows first to avoid FK violations.
@@ -25,6 +26,10 @@ async function cleanupAll() {
 
 describe("createWithdrawal — intake validation", () => {
   beforeEach(cleanupAll);
+  beforeEach(async () => {
+    await resetCircuit("withdrawals", "test-setup");
+    _resetCircuitBreakerCache();
+  });
 
   // Leave the DB in the same state we found it; later test files do
   // `prisma.user.deleteMany()` and would hit FK violations on lingering rows.
