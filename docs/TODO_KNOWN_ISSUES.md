@@ -24,3 +24,28 @@
   escrow drain + status → REFUNDED).
 - closePool 'by' parameter not persisted — audit-log column deferred to
   PROMPT_14 (DisputeLog/AuditLog table).
+
+## PROMPT_13 tech debt
+
+### Migrate dispute evidence naar dedicated `DisputeEvidence` table V2
+- **Huidige staat (MVP):** dispute-fase evidence wordt opgeslagen in
+  `BetEvidence` met description-prefix `[dispute:${disputeId}] `. Read-paden
+  in `resolveDispute` filteren via `description.startsWith(...)`. Dedup via
+  schema's bestaande `@@unique([betId, contentHash])`.
+- **Probleem op termijn:** (a) prefix-conventie is fragiel — als iemand de
+  prefix vergeet of misformateert raken evidence rows "onzichtbaar" voor
+  dispute-pad. (b) Bij grote bet-evidence sets (post-launch met veel proof-
+  items pre-dispute) wordt `LIKE '[dispute:%' OR description LIKE ...`
+  filter een tablescan. (c) Geen onderscheid tussen pre-dispute proof en
+  dispute-fase evidence in admin UI behalve via prefix-parsing.
+- **Migratie target:** dedicated `DisputeEvidence` tabel met `disputeId`,
+  `uploadedById`, `type` (EvidenceType), `fileUrl?`, `mimeType?`,
+  `contentHash`, `description?`, `createdAt`, plus `@@unique([disputeId,
+  contentHash])` dedup en index `[uploadedById, createdAt]`. Migration
+  kopieert bestaande prefixed `BetEvidence` rows (parses prefix → disputeId,
+  strips prefix from description), markeert oorspronkelijke rows als
+  archief of laat ze leeg-prefix achter.
+- **Trigger:** komt in PROMPT_18+ (post-MVP cleanup) zodra (a) prefix-
+  conventie operationeel pijn doet, of (b) productfeature dispute-evidence
+  apart wil tonen. Niet urgent voor MVP launch — pad werkt correct.
+- **Geregistreerd door:** PROMPT_13 spec §6, Q4 resolutie 2026-05-10.
