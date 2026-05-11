@@ -1,13 +1,16 @@
 import "server-only";
-import type { Bet, Dispute } from "@prisma/client";
+import type { Bet, Dispute, DisputeOutcome } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { applyBps, FEES } from "@/lib/fees";
-import { recordTransaction, getUserAccount, type TxClient } from "@/lib/ledger";
+import { recordTransaction, getUserAccount, getTreasuryAccount, type TxClient } from "@/lib/ledger";
 import { BetError } from "@/lib/bets/errors";
 import { lockBet } from "@/lib/bets/service";
+import { settleBet } from "@/lib/bets/settlement";
+import { getOrCreateBetEscrowAccount } from "@/lib/bets/escrow";
 import { lockMatch } from "@/lib/matches/service";
 import { IDEMPOTENCY_TTL_MS } from "@/lib/pools/service";
 import { DisputeError } from "./errors";
+import { isAdmin } from "./admin";
 import { getOrCreateDisputeEscrowAccount } from "./escrow";
 
 const SHA256_HEX = /^[a-f0-9]{64}$/i;
@@ -29,6 +32,58 @@ export async function lockDispute(
     );
   }
   return { id: rows[0].id };
+}
+
+async function disposeDeposit(
+  tx: TxClient,
+  dispute: Dispute,
+  bet: Bet,
+  opener: { id: string },
+  outcome: DisputeOutcome,
+  ledgerIdempotencyKey: string,
+): Promise<{ ledgerTxId: string; destination: "OPENER" | "TREASURY" }> {
+  const opener_won_dispute =
+    (outcome === "CREATOR_WINS" && opener.id === bet.createdById) ||
+    (outcome === "OPPONENT_WINS" && opener.id === bet.opponentUserId) ||
+    outcome === "VOID";
+
+  const escrow = await getOrCreateDisputeEscrowAccount(tx, dispute.id);
+  const balance = escrow.balanceUnits;
+  if (balance === 0n) {
+    return {
+      ledgerTxId: "",
+      destination: opener_won_dispute ? "OPENER" : "TREASURY",
+    };
+  }
+
+  const destAcct = opener_won_dispute
+    ? await getUserAccount(tx, opener.id)
+    : await getTreasuryAccount(tx);
+
+  const result = await recordTransaction({
+    tx,
+    idempotencyKey: ledgerIdempotencyKey,
+    description: `Dispute deposit dispositie (dispute=${dispute.id}, outcome=${outcome})`,
+    initiatorUserId: undefined,
+    refType: "dispute",
+    refId: dispute.id,
+    lines: [
+      {
+        debitAccountId: escrow.id,
+        creditAccountId: destAcct.id,
+        amountUnits: balance,
+        entryType: opener_won_dispute ? "ESCROW_RELEASE" : "FEE_COLLECTION",
+        note: opener_won_dispute
+          ? `dispute-deposit-refund:${dispute.id}`
+          : `dispute-deposit-forfeit:${dispute.id}`,
+      },
+    ],
+  });
+
+  return {
+    ledgerTxId: result.transaction.id,
+    destination: opener_won_dispute ? "OPENER" : "TREASURY",
+  };
 }
 
 // ── service inputs/outputs ───────────────────────────────────────────
@@ -524,9 +579,249 @@ export async function submitDisputeEvidence(
 }
 
 export async function resolveDispute(
-  _input: ResolveDisputeInput,
+  input: ResolveDisputeInput,
 ): Promise<ResolveDisputeResult> {
-  throw new Error("resolveDispute: not implemented");
+  const { disputeId, adminId, outcome, adminNotes, idempotencyKey } = input;
+
+  if (!isAdmin(adminId)) {
+    throw new DisputeError(
+      "DISPUTE_NOT_ADMIN",
+      `User ${adminId} is not an admin`,
+      403,
+    );
+  }
+
+  if (adminNotes !== undefined && adminNotes.length > 5000) {
+    throw new DisputeError(
+      "DISPUTE_INVALID_INPUT",
+      "adminNotes must be max 5000 characters",
+      400,
+    );
+  }
+
+  return prisma.$transaction(
+    async (tx) => {
+      const existingKey = await tx.idempotencyKey.findUnique({
+        where: { userId_key: { userId: adminId, key: idempotencyKey } },
+      });
+      const now = new Date();
+      if (
+        existingKey?.responseJson &&
+        existingKey.expiresAt &&
+        existingKey.expiresAt > now
+      ) {
+        const cached = existingKey.responseJson as {
+          disputeId: string;
+          betId: string;
+          ledgerTxIds: string[];
+        };
+        const cachedDispute = await tx.dispute.findUniqueOrThrow({
+          where: { id: cached.disputeId },
+        });
+        const cachedBet = await tx.bet.findUniqueOrThrow({
+          where: { id: cached.betId },
+        });
+        return {
+          dispute: cachedDispute,
+          bet: cachedBet,
+          ledgerTxIds: cached.ledgerTxIds,
+        };
+      }
+      await tx.idempotencyKey.upsert({
+        where: { userId_key: { userId: adminId, key: idempotencyKey } },
+        create: {
+          key: idempotencyKey,
+          userId: adminId,
+          scope: "dispute-resolve",
+          route: "dispute-resolve",
+          expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
+        },
+        update: {
+          scope: "dispute-resolve",
+          route: "dispute-resolve",
+          expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
+        },
+      });
+
+      await lockDispute(tx, disputeId);
+      const dispute = await tx.dispute.findUniqueOrThrow({
+        where: { id: disputeId },
+      });
+
+      if (
+        dispute.status !== "OPEN" &&
+        dispute.status !== "EVIDENCE_PHASE" &&
+        dispute.status !== "ADMIN_REVIEW"
+      ) {
+        throw new DisputeError(
+          "DISPUTE_INVALID_STATUS",
+          `Dispute ${disputeId} status ${dispute.status} not eligible for resolve`,
+          409,
+        );
+      }
+
+      await lockBet(tx, dispute.betId);
+      const bet = await tx.bet.findUniqueOrThrow({
+        where: { id: dispute.betId },
+      });
+      if (bet.matchId) {
+        await lockMatch(tx, bet.matchId);
+      }
+
+      const opener = { id: dispute.openedById };
+      const ledgerTxIds: string[] = [];
+
+      if (outcome === "CREATOR_WINS" || outcome === "OPPONENT_WINS") {
+        const winnerId =
+          outcome === "CREATOR_WINS" ? bet.createdById : bet.opponentUserId;
+        if (!winnerId) {
+          throw new DisputeError(
+            "DISPUTE_INVALID_STATUS",
+            `Bet ${bet.id} has no ${outcome === "CREATOR_WINS" ? "creator" : "opponent"}`,
+            409,
+          );
+        }
+        await settleBet(tx, {
+          bet,
+          winnerId,
+          ledgerIdempotencyKey: `dispute-resolve:${disputeId}`,
+          fromStatus: "DISPUTED",
+          actorId: adminId,
+          feeOverrideBps: FEES.DISPUTE_RESOLUTION_BPS,
+          actorType: "ADMIN_DISPUTE_RESOLVE",
+        });
+        const settleTx = await tx.ledgerTransaction.findUnique({
+          where: { idempotencyKey: `dispute-resolve:${disputeId}` },
+        });
+        if (settleTx) {
+          ledgerTxIds.push(settleTx.id);
+        }
+      } else if (outcome === "VOID") {
+        if (!bet.opponentUserId) {
+          throw new DisputeError(
+            "DISPUTE_INVALID_STATUS",
+            `Bet ${bet.id} has no opponent for VOID refund`,
+            409,
+          );
+        }
+        const creatorAcct = await getUserAccount(tx, bet.createdById);
+        const opponentAcct = await getUserAccount(tx, bet.opponentUserId);
+        const escrowAcct = await getOrCreateBetEscrowAccount(tx, bet.id);
+
+        const voidLedger = await recordTransaction({
+          tx,
+          idempotencyKey: `dispute-resolve-void:${disputeId}`,
+          description: `Dispute VOID refund (bet=${bet.id}, dispute=${disputeId})`,
+          initiatorUserId: adminId,
+          refType: "bet",
+          refId: bet.id,
+          lines: [
+            {
+              debitAccountId: escrowAcct.id,
+              creditAccountId: creatorAcct.id,
+              amountUnits: bet.stakeUnits,
+              entryType: "BET_REFUND",
+              note: `dispute-void-refund-creator:${bet.id}`,
+            },
+            {
+              debitAccountId: escrowAcct.id,
+              creditAccountId: opponentAcct.id,
+              amountUnits: bet.stakeUnits,
+              entryType: "BET_REFUND",
+              note: `dispute-void-refund-opponent:${bet.id}`,
+            },
+          ],
+        });
+        ledgerTxIds.push(voidLedger.transaction.id);
+
+        const voidUpdate = await tx.bet.updateMany({
+          where: { id: bet.id, version: bet.version, status: bet.status },
+          data: {
+            status: "VOID",
+            voidedAt: now,
+            version: bet.version + 1,
+          },
+        });
+        if (voidUpdate.count !== 1) {
+          throw new BetError(
+            "BET_VERSION_MISMATCH",
+            `Bet ${bet.id} concurrently mutated`,
+            409,
+          );
+        }
+        await tx.betStateTransition.create({
+          data: {
+            betId: bet.id,
+            fromStatus: bet.status,
+            toStatus: "VOID",
+            actorId: adminId,
+            actorType: "ADMIN_DISPUTE_RESOLVE",
+            metadata: {
+              disputeId,
+              outcome: "VOID",
+              ledgerTxId: voidLedger.transaction.id,
+            },
+          },
+        });
+      }
+
+      const deposit = await disposeDeposit(
+        tx,
+        dispute,
+        bet,
+        opener,
+        outcome,
+        `dispute-deposit-dispose:${disputeId}`,
+      );
+      if (deposit.ledgerTxId) {
+        ledgerTxIds.push(deposit.ledgerTxId);
+      }
+
+      const disputeUpdate = await tx.dispute.updateMany({
+        where: { id: disputeId, status: dispute.status },
+        data: {
+          status: "RESOLVED",
+          outcome,
+          resolvedById: adminId,
+          resolvedAt: now,
+          adminNotes: adminNotes ?? null,
+        },
+      });
+      if (disputeUpdate.count !== 1) {
+        throw new DisputeError(
+          "DISPUTE_VERSION_MISMATCH",
+          `Dispute ${disputeId} concurrently mutated`,
+          409,
+        );
+      }
+
+      const refreshedDispute = await tx.dispute.findUniqueOrThrow({
+        where: { id: disputeId },
+      });
+      const refreshedBet = await tx.bet.findUniqueOrThrow({
+        where: { id: bet.id },
+      });
+      await tx.idempotencyKey.update({
+        where: { userId_key: { userId: adminId, key: idempotencyKey } },
+        data: {
+          responseJson: {
+            disputeId,
+            betId: bet.id,
+            ledgerTxIds,
+          },
+          statusCode: 200,
+          completedAt: new Date(),
+        },
+      });
+
+      return {
+        dispute: refreshedDispute,
+        bet: refreshedBet,
+        ledgerTxIds,
+      };
+    },
+    { timeout: 30000, maxWait: 5000 },
+  );
 }
 
 export async function forceCancelBet(
