@@ -12,6 +12,7 @@ import { IDEMPOTENCY_TTL_MS } from "@/lib/pools/service";
 import { DisputeError } from "./errors";
 import { isAdmin } from "./admin";
 import { getOrCreateDisputeEscrowAccount } from "./escrow";
+import { trackReputationEvent } from "@/lib/reputation/service";
 
 const SHA256_HEX = /^[a-f0-9]{64}$/i;
 
@@ -356,6 +357,15 @@ export async function openDispute(
           },
         });
       }
+
+      // P14 hook: DISPUTE_OPENED voor opener
+      await trackReputationEvent({
+        tx,
+        userId: openerId,
+        eventType: "DISPUTE_OPENED",
+        refType: "dispute",
+        refId: dispute.id,
+      });
 
       await tx.idempotencyKey.update({
         where: { userId_key: { userId: openerId, key: idempotencyKey } },
@@ -801,6 +811,27 @@ export async function resolveDispute(
       const refreshedBet = await tx.bet.findUniqueOrThrow({
         where: { id: bet.id },
       });
+
+      // P14 hook: DISPUTE_WON/LOST/VOID voor opener
+      let repEvent: "DISPUTE_WON" | "DISPUTE_LOST" | "DISPUTE_VOID";
+      if (outcome === "VOID") {
+        repEvent = "DISPUTE_VOID";
+      } else if (
+        (outcome === "CREATOR_WINS" && opener.id === bet.createdById) ||
+        (outcome === "OPPONENT_WINS" && opener.id === bet.opponentUserId)
+      ) {
+        repEvent = "DISPUTE_WON";
+      } else {
+        repEvent = "DISPUTE_LOST";
+      }
+      await trackReputationEvent({
+        tx,
+        userId: opener.id,
+        eventType: repEvent,
+        refType: "dispute",
+        refId: disputeId,
+      });
+
       await tx.idempotencyKey.update({
         where: { userId_key: { userId: adminId, key: idempotencyKey } },
         data: {
@@ -1015,6 +1046,25 @@ export async function forceCancelBet(
       const refreshedBet = await tx.bet.findUniqueOrThrow({
         where: { id: bet.id },
       });
+
+      // P14 hook: FORCE_CANCELLED voor beide participants (audit, delta 0)
+      await trackReputationEvent({
+        tx,
+        userId: refreshedBet.createdById,
+        eventType: "FORCE_CANCELLED",
+        refType: "bet",
+        refId: refreshedBet.id,
+      });
+      if (hasOpponent && refreshedBet.opponentUserId) {
+        await trackReputationEvent({
+          tx,
+          userId: refreshedBet.opponentUserId,
+          eventType: "FORCE_CANCELLED",
+          refType: "bet",
+          refId: refreshedBet.id,
+        });
+      }
+
       await tx.idempotencyKey.update({
         where: { userId_key: { userId: adminId, key: idempotencyKey } },
         data: {
