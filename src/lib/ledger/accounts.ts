@@ -7,6 +7,7 @@ export type TxClient = Prisma.TransactionClient;
 /** Scope-key conventions — ALWAYS use these helpers, never inline strings. */
 export const userScopeKey = (userId: string) => `user:${userId}`;
 export const betScopeKey = (betId: string) => `bet:${betId}`;
+export const disputeScopeKey = (disputeId: string) => `dispute:${disputeId}`;
 export const TREASURY_SCOPE_KEY = "treasury";
 export const EXTERNAL_SCOPE_KEY = "external";
 

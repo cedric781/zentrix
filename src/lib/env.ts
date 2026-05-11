@@ -22,6 +22,7 @@ const EnvSchema = z.object({
   WITHDRAWAL_MIN_USDC: z.string().default("1"),
   PLATFORM_TREASURY_SCOPE: z.string().default("treasury"),
   ADMIN_API_TOKEN: z.string().min(32).optional(),
+  ADMIN_USER_IDS: z.string().optional(),
   SENTRY_DSN: z.string().url().optional(),
   POOL_MIN_BET_USDC: z.string().default("1"),
   POOL_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(1000).default(200),
@@ -55,3 +56,6 @@ export function getEnv(): Env {
 export function _resetEnvCache() {
   cached = null;
 }
+
+// Alias for spec compatibility — see PROMPT_13 §2
+export const env = getEnv;
