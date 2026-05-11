@@ -7,6 +7,7 @@ import type {
   UserReputation,
 } from "@prisma/client";
 import { type TxClient } from "@/lib/ledger";
+import { prisma } from "@/lib/prisma";
 import { ReputationError } from "./errors";
 import {
   ADMIN_EVENT_TYPES,
@@ -233,4 +234,51 @@ export async function trackReputationEvent(
     reputation: updatedReputation,
     tierChanged,
   };
+}
+
+// ── read services ─────────────────────────────────────────────────────
+
+/**
+ * Read service: get user reputation with lazy create.
+ * Eigen $transaction (P2002 retry race-safe).
+ * Throws REPUTATION_USER_NOT_FOUND als User entity zelf niet bestaat (FK fail).
+ */
+export async function getUserReputation(
+  userId: string,
+): Promise<UserReputation> {
+  // Pre-check zonder transaction (snelpad voor bestaande users)
+  const existing = await prisma.userReputation.findUnique({
+    where: { userId },
+  });
+  if (existing) return existing;
+
+  // Lazy create met defaults (matches trackReputationEvent defaults)
+  try {
+    return await prisma.userReputation.create({
+      data: {
+        userId,
+        score: REPUTATION_SCORE_INITIAL,
+        tier: "NORMAL",
+      },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      // P2002: unique constraint — race, andere call heeft net gecreëerd
+      if (err.code === "P2002") {
+        const refetched = await prisma.userReputation.findUnique({
+          where: { userId },
+        });
+        if (refetched) return refetched;
+      }
+      // P2003: foreign key violation — User entity bestaat niet
+      if (err.code === "P2003") {
+        throw new ReputationError(
+          "REPUTATION_USER_NOT_FOUND",
+          `User ${userId} does not exist`,
+          404,
+        );
+      }
+    }
+    throw err;
+  }
 }
