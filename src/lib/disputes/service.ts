@@ -10,6 +10,8 @@ import { IDEMPOTENCY_TTL_MS } from "@/lib/pools/service";
 import { DisputeError } from "./errors";
 import { getOrCreateDisputeEscrowAccount } from "./escrow";
 
+const SHA256_HEX = /^[a-f0-9]{64}$/i;
+
 // ── helpers ──────────────────────────────────────────────────────────
 
 export async function lockDispute(
@@ -327,9 +329,198 @@ export async function openDispute(
 }
 
 export async function submitDisputeEvidence(
-  _input: SubmitDisputeEvidenceInput,
+  input: SubmitDisputeEvidenceInput,
 ): Promise<SubmitDisputeEvidenceResult> {
-  throw new Error("submitDisputeEvidence: not implemented");
+  const { disputeId, uploaderId, items, idempotencyKey } = input;
+
+  if (items.length === 0) {
+    throw new DisputeError(
+      "DISPUTE_INVALID_INPUT",
+      "items must contain at least 1 evidence entry",
+      400,
+    );
+  }
+  const allowedTypes = ["TEXT", "URL", "IMAGE", "VIDEO"] as const;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!allowedTypes.includes(item.type)) {
+      throw new DisputeError(
+        "DISPUTE_EVIDENCE_INVALID",
+        `items[${i}].type must be one of TEXT|URL|IMAGE|VIDEO`,
+        400,
+      );
+    }
+    if (typeof item.contentHash !== "string" || !SHA256_HEX.test(item.contentHash)) {
+      throw new DisputeError(
+        "DISPUTE_EVIDENCE_INVALID",
+        `items[${i}].contentHash must be 64-char sha256 hex`,
+        400,
+      );
+    }
+    if (item.type !== "TEXT") {
+      if (typeof item.fileUrl !== "string" || item.fileUrl.length === 0) {
+        throw new DisputeError(
+          "DISPUTE_EVIDENCE_INVALID",
+          `items[${i}].fileUrl required for type=${item.type}`,
+          400,
+        );
+      }
+    }
+  }
+
+  return prisma.$transaction(
+    async (tx) => {
+      const existingKey = await tx.idempotencyKey.findUnique({
+        where: { userId_key: { userId: uploaderId, key: idempotencyKey } },
+      });
+      const now = new Date();
+      if (
+        existingKey?.responseJson &&
+        existingKey.expiresAt &&
+        existingKey.expiresAt > now
+      ) {
+        const cached = existingKey.responseJson as {
+          disputeId: string;
+          evidenceAdded: number;
+          evidenceTotal: number;
+        };
+        const cachedDispute = await tx.dispute.findUniqueOrThrow({
+          where: { id: cached.disputeId },
+        });
+        return {
+          dispute: cachedDispute,
+          evidenceAdded: cached.evidenceAdded,
+          evidenceTotal: cached.evidenceTotal,
+        };
+      }
+      await tx.idempotencyKey.upsert({
+        where: { userId_key: { userId: uploaderId, key: idempotencyKey } },
+        create: {
+          key: idempotencyKey,
+          userId: uploaderId,
+          scope: "dispute-evidence",
+          route: "dispute-evidence",
+          expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
+        },
+        update: {
+          scope: "dispute-evidence",
+          route: "dispute-evidence",
+          expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
+        },
+      });
+
+      await lockDispute(tx, disputeId);
+      const dispute = await tx.dispute.findUniqueOrThrow({
+        where: { id: disputeId },
+      });
+      await lockBet(tx, dispute.betId);
+      const bet = await tx.bet.findUniqueOrThrow({
+        where: { id: dispute.betId },
+      });
+
+      if (dispute.status !== "OPEN" && dispute.status !== "EVIDENCE_PHASE") {
+        throw new DisputeError(
+          "DISPUTE_INVALID_STATUS",
+          `Dispute ${disputeId} status ${dispute.status} not eligible for evidence submission`,
+          409,
+        );
+      }
+      if (bet.createdById !== uploaderId && bet.opponentUserId !== uploaderId) {
+        throw new DisputeError(
+          "DISPUTE_NOT_PARTICIPANT",
+          `User ${uploaderId} is not a participant of bet ${dispute.betId}`,
+          403,
+        );
+      }
+
+      const seen = new Set<string>();
+      const dedupedItems = items.filter((item) => {
+        if (seen.has(item.contentHash)) return false;
+        seen.add(item.contentHash);
+        return true;
+      });
+
+      const existingHashRows = await tx.betEvidence.findMany({
+        where: {
+          betId: dispute.betId,
+          contentHash: { in: dedupedItems.map((it) => it.contentHash) },
+        },
+        select: { contentHash: true },
+      });
+      const existingHashSet = new Set(
+        existingHashRows.map((e) => e.contentHash),
+      );
+      const newItems = dedupedItems.filter(
+        (item) => !existingHashSet.has(item.contentHash),
+      );
+
+      const currentUploaderCount = await tx.betEvidence.count({
+        where: { betId: dispute.betId, uploadedById: uploaderId },
+      });
+      if (currentUploaderCount + newItems.length > 10) {
+        throw new DisputeError(
+          "DISPUTE_EVIDENCE_LIMIT",
+          `Evidence limit of 10 per uploader exceeded (have ${currentUploaderCount}, attempting +${newItems.length})`,
+          400,
+        );
+      }
+
+      if (newItems.length > 0) {
+        await tx.betEvidence.createMany({
+          data: newItems.map((item) => ({
+            betId: dispute.betId,
+            uploadedById: uploaderId,
+            type: item.type,
+            fileUrl: item.fileUrl ?? null,
+            contentHash: item.contentHash,
+            description: `[dispute:${disputeId}] ${item.description ?? ""}`,
+          })),
+        });
+      }
+
+      if (dispute.status === "OPEN") {
+        const promo = await tx.dispute.updateMany({
+          where: { id: disputeId, status: "OPEN" },
+          data: { status: "EVIDENCE_PHASE" },
+        });
+        if (promo.count !== 1) {
+          throw new DisputeError(
+            "DISPUTE_VERSION_MISMATCH",
+            `Dispute ${disputeId} concurrently mutated`,
+            409,
+          );
+        }
+      }
+
+      const evidenceAdded = newItems.length;
+      const evidenceTotal = await tx.betEvidence.count({
+        where: { betId: dispute.betId },
+      });
+
+      await tx.idempotencyKey.update({
+        where: { userId_key: { userId: uploaderId, key: idempotencyKey } },
+        data: {
+          responseJson: {
+            disputeId,
+            evidenceAdded,
+            evidenceTotal,
+          },
+          statusCode: 200,
+          completedAt: new Date(),
+        },
+      });
+
+      const refreshed = await tx.dispute.findUniqueOrThrow({
+        where: { id: disputeId },
+      });
+      return {
+        dispute: refreshed,
+        evidenceAdded,
+        evidenceTotal,
+      };
+    },
+    { timeout: 15000, maxWait: 5000 },
+  );
 }
 
 export async function resolveDispute(
