@@ -13,6 +13,7 @@ import { BetError } from "./errors";
 import { getOrCreateBetEscrowAccount } from "./escrow";
 import { safeHashCompare } from "@/lib/crypto/safe-compare";
 import { settleBet } from "./settlement";
+import { trackReputationEvent } from "@/lib/reputation/service";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN_HEX = /^[0-9a-f]{64}$/;
@@ -831,6 +832,30 @@ export async function confirmResult(
       });
 
       const finalBet = await tx.bet.findUniqueOrThrow({ where: { id: bet.id } });
+
+      // P14 hook: BET_SETTLED_CLEAN (alleen als geen DISPUTED in history)
+      const hadDispute = await tx.betStateTransition.findFirst({
+        where: { betId: bet.id, toStatus: "DISPUTED" },
+      });
+      if (!hadDispute) {
+        await trackReputationEvent({
+          tx,
+          userId: finalBet.createdById,
+          eventType: "BET_SETTLED_CLEAN",
+          refType: "bet",
+          refId: finalBet.id,
+        });
+        if (finalBet.opponentUserId) {
+          await trackReputationEvent({
+            tx,
+            userId: finalBet.opponentUserId,
+            eventType: "BET_SETTLED_CLEAN",
+            refType: "bet",
+            refId: finalBet.id,
+          });
+        }
+      }
+
       return { bet: finalBet, confirmation };
     }
 
