@@ -157,6 +157,7 @@ model User {
   disputesOpened               Dispute[]                    @relation("DisputeOpener")
   disputesResolved             Dispute[]                    @relation("DisputeResolver")
   reputation                   UserReputation?
+  reputationEvents             ReputationEvent[]
   idempotencyKeys              IdempotencyKey[]
 
   @@map("users")
@@ -572,7 +573,7 @@ model Dispute {
 model UserReputation {
   id             String         @id @default(uuid())
   userId         String         @unique @map("user_id")
-  score          Int            @default(100)
+  score          Int            @default(500)
   disputesOpened Int            @default(0) @map("disputes_opened")
   disputesWon    Int            @default(0) @map("disputes_won")
   disputesLost   Int            @default(0) @map("disputes_lost")
@@ -584,4 +585,38 @@ model UserReputation {
   @@index([tier], map: "idx_user_reputation_tier")
   @@index([score], map: "idx_user_reputation_score")
   @@map("user_reputations")
+}
+
+model ReputationEvent {
+  id             String              @id @default(uuid())
+  userId         String              @map("user_id")
+  eventType      ReputationEventType @map("event_type")
+  scoreDelta     Int                 @map("score_delta")
+  scoreAfter     Int                 @map("score_after")
+  tierBefore     ReputationTier      @map("tier_before")
+  tierAfter      ReputationTier      @map("tier_after")
+  refType        String?             @map("ref_type")
+  refId          String?             @map("ref_id")
+  metadata       Json?
+  idempotencyKey String              @unique @map("idempotency_key")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt], map: "idx_reputation_events_user")
+  @@index([eventType], map: "idx_reputation_events_type")
+  @@index([refType, refId], map: "idx_reputation_events_ref")
+  @@map("reputation_events")
+}
+
+enum ReputationEventType {
+  BET_SETTLED_CLEAN
+  DISPUTE_OPENED
+  DISPUTE_WON
+  DISPUTE_LOST
+  DISPUTE_VOID
+  FORCE_CANCELLED
+  BET_EXPIRED
+  ADMIN_PENALTY
+  ADMIN_BONUS
 }

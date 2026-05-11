@@ -1,9 +1,7 @@
 import "server-only";
+import type { ReputationEventType } from "@prisma/client";
 
-// INTERIM TYPE NOTE: Record<string, number> tot Fase B.0 schema migration
-// ReputationEventType enum aan @prisma/client toevoegt. Daarna tighten naar
-// Record<ReputationEventType, number>. Acceptance van B.0 incl. deze upgrade.
-export const REPUTATION_DELTAS: Record<string, number> = {
+export const REPUTATION_DELTAS: Record<ReputationEventType, number> = {
   BET_SETTLED_CLEAN: 2,
   DISPUTE_OPENED: -5,
   DISPUTE_WON: 15,
@@ -24,8 +22,7 @@ export const TIER_THRESHOLDS = {
   NORMAL_MIN: 400,
 } as const;
 
-// INTERIM: ReadonlyArray<string> tot B.0 dan ReadonlyArray<ReputationEventType>
-export const ADMIN_EVENT_TYPES: ReadonlyArray<string> = [
+export const ADMIN_EVENT_TYPES: ReadonlyArray<ReputationEventType> = [
   "ADMIN_PENALTY",
   "ADMIN_BONUS",
 ];
