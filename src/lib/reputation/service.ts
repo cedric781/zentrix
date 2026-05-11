@@ -37,11 +37,12 @@ export function getReputationTier(score: number): ReputationTier {
 // ── private helpers ───────────────────────────────────────────────────
 
 function buildIdempotencyKey(
+  userId: string,
   eventType: ReputationEventType,
   refType: string | undefined,
   refId: string | undefined,
 ): string {
-  return `${eventType}:${refType ?? "null"}:${refId ?? "null"}`;
+  return `${userId}:${eventType}:${refType ?? "null"}:${refId ?? "null"}`;
 }
 
 function clampScore(score: number): number {
@@ -146,7 +147,7 @@ export async function trackReputationEvent(
   }
 
   // 2. Build idempotency key
-  const idempotencyKey = buildIdempotencyKey(eventType, refType, refId);
+  const idempotencyKey = buildIdempotencyKey(userId, eventType, refType, refId);
 
   // 3. Pre-check idempotency (silent return on duplicate)
   const existingEvent = await tx.reputationEvent.findUnique({

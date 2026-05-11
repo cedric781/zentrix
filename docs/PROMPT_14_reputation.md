@@ -63,7 +63,8 @@ P14 alleen tracking + read API. Enforcement gehoist naar P14b/P16.
 
 ### 5. Idempotency
 - ReputationEvent.idempotencyKey unique constraint.
-- Format: `${eventType}:${refType}:${refId}` (bv. "BET_SETTLED_CLEAN:bet:abc-123").
+- Format: `${userId}:${eventType}:${refType}:${refId}` (bv. "u-42:BET_SETTLED_CLEAN:bet:abc-123").
+- userId in key prefix: cruciaal voor dual-participant events (FORCE_CANCELLED, BET_SETTLED_CLEAN) — zonder userId collision tussen creator en opponent.
 - Bij duplicate insert: silently ignore (no error, no double charge).
 
 ### 6. forceCancelBet impact

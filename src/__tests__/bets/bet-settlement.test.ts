@@ -139,6 +139,12 @@ async function fullCleanup() {
       ],
     },
   });
+  await prisma.reputationEvent.deleteMany({
+    where: { user: { privyId: { startsWith: PRIVY_PREFIX } } },
+  });
+  await prisma.userReputation.deleteMany({
+    where: { user: { privyId: { startsWith: PRIVY_PREFIX } } },
+  });
   await prisma.user.deleteMany({
     where: { privyId: { startsWith: PRIVY_PREFIX } },
   });
