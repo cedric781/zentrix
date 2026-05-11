@@ -825,7 +825,213 @@ export async function resolveDispute(
 }
 
 export async function forceCancelBet(
-  _input: ForceCancelBetInput,
+  input: ForceCancelBetInput,
 ): Promise<ForceCancelBetResult> {
-  throw new Error("forceCancelBet: not implemented");
+  const { betId, adminId, reason, idempotencyKey } = input;
+
+  if (!isAdmin(adminId)) {
+    throw new DisputeError(
+      "DISPUTE_NOT_ADMIN",
+      `User ${adminId} is not an admin`,
+      403,
+    );
+  }
+
+  if (reason.length < 1 || reason.length > 2000) {
+    throw new BetError(
+      "BET_INVALID_INPUT",
+      "reason must be between 1 and 2000 characters",
+      400,
+    );
+  }
+
+  return prisma.$transaction(
+    async (tx) => {
+      const existingKey = await tx.idempotencyKey.findUnique({
+        where: { userId_key: { userId: adminId, key: idempotencyKey } },
+      });
+      const now = new Date();
+      if (
+        existingKey?.responseJson &&
+        existingKey.expiresAt &&
+        existingKey.expiresAt > now
+      ) {
+        const cached = existingKey.responseJson as {
+          betId: string;
+          ledgerTxId: string | null;
+        };
+        const cachedBet = await tx.bet.findUniqueOrThrow({
+          where: { id: cached.betId },
+        });
+        return {
+          bet: cachedBet,
+          ledgerTxId: cached.ledgerTxId,
+        };
+      }
+      await tx.idempotencyKey.upsert({
+        where: { userId_key: { userId: adminId, key: idempotencyKey } },
+        create: {
+          key: idempotencyKey,
+          userId: adminId,
+          scope: "force-cancel-bet",
+          route: "force-cancel-bet",
+          expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
+        },
+        update: {
+          scope: "force-cancel-bet",
+          route: "force-cancel-bet",
+          expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
+        },
+      });
+
+      await lockBet(tx, betId);
+      const bet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
+
+      const cancelableStatuses: typeof bet.status[] = [
+        "DRAFT",
+        "OPEN",
+        "ACTIVE",
+        "RESULT_PROPOSED",
+        "AWAITING_CONFIRMATION",
+        "DISPUTED",
+      ];
+      if (!cancelableStatuses.includes(bet.status)) {
+        throw new BetError(
+          "BET_INVALID_STATUS",
+          `Bet ${betId} status ${bet.status} not eligible for force cancel`,
+          409,
+        );
+      }
+
+      const hasOpponent =
+        bet.status !== "DRAFT" && bet.status !== "OPEN" && bet.opponentUserId;
+      const creatorAcct = await getUserAccount(tx, bet.createdById);
+      const escrowAcct = await getOrCreateBetEscrowAccount(tx, bet.id);
+
+      const lines: Parameters<typeof recordTransaction>[0]["lines"] = [
+        {
+          debitAccountId: escrowAcct.id,
+          creditAccountId: creatorAcct.id,
+          amountUnits: bet.stakeUnits,
+          entryType: "BET_REFUND",
+          note: `force-cancel-refund-creator:${bet.id}`,
+        },
+      ];
+
+      let refundedToOpponent = false;
+      if (hasOpponent && bet.opponentUserId) {
+        const opponentAcct = await getUserAccount(tx, bet.opponentUserId);
+        lines.push({
+          debitAccountId: escrowAcct.id,
+          creditAccountId: opponentAcct.id,
+          amountUnits: bet.stakeUnits,
+          entryType: "BET_REFUND",
+          note: `force-cancel-refund-opponent:${bet.id}`,
+        });
+        refundedToOpponent = true;
+      }
+
+      const refundLedger = await recordTransaction({
+        tx,
+        idempotencyKey: `force-cancel:${betId}`,
+        description: `Force cancel refund (bet=${bet.id}, admin=${adminId})`,
+        initiatorUserId: adminId,
+        refType: "bet",
+        refId: bet.id,
+        lines,
+      });
+      const ledgerTxId = refundLedger.transaction.id;
+
+      let disputeVoided = false;
+      const openDispute = await tx.dispute.findFirst({
+        where: {
+          betId,
+          status: { in: ["OPEN", "EVIDENCE_PHASE", "ADMIN_REVIEW"] },
+        },
+      });
+      if (openDispute) {
+        await disposeDeposit(
+          tx,
+          openDispute,
+          bet,
+          { id: openDispute.openedById },
+          "VOID",
+          `dispute-deposit-dispose:force-cancel:${openDispute.id}`,
+        );
+
+        const voidUpdate = await tx.dispute.updateMany({
+          where: { id: openDispute.id, status: openDispute.status },
+          data: {
+            status: "RESOLVED",
+            outcome: "VOID",
+            resolvedById: adminId,
+            resolvedAt: now,
+            adminNotes: `Auto-voided by force-cancel: ${reason}`,
+          },
+        });
+        if (voidUpdate.count !== 1) {
+          throw new DisputeError(
+            "DISPUTE_VERSION_MISMATCH",
+            `Dispute ${openDispute.id} concurrently mutated`,
+            409,
+          );
+        }
+        disputeVoided = true;
+      }
+
+      const cancelUpdate = await tx.bet.updateMany({
+        where: { id: bet.id, version: bet.version, status: bet.status },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: now,
+          version: bet.version + 1,
+        },
+      });
+      if (cancelUpdate.count !== 1) {
+        throw new BetError(
+          "BET_VERSION_MISMATCH",
+          `Bet ${bet.id} concurrently mutated`,
+          409,
+        );
+      }
+
+      await tx.betStateTransition.create({
+        data: {
+          betId: bet.id,
+          fromStatus: bet.status,
+          toStatus: "CANCELLED",
+          actorId: adminId,
+          actorType: "ADMIN_FORCE",
+          metadata: {
+            reason,
+            refundedToCreator: true,
+            refundedToOpponent,
+            disputeVoided,
+            ledgerTxId,
+          },
+        },
+      });
+
+      const refreshedBet = await tx.bet.findUniqueOrThrow({
+        where: { id: bet.id },
+      });
+      await tx.idempotencyKey.update({
+        where: { userId_key: { userId: adminId, key: idempotencyKey } },
+        data: {
+          responseJson: {
+            betId: bet.id,
+            ledgerTxId,
+          },
+          statusCode: 200,
+          completedAt: new Date(),
+        },
+      });
+
+      return {
+        bet: refreshedBet,
+        ledgerTxId,
+      };
+    },
+    { timeout: 30000, maxWait: 5000 },
+  );
 }
