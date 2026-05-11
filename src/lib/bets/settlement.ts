@@ -16,6 +16,8 @@ export interface SettleBetInput {
   ledgerIdempotencyKey: string;
   fromStatus: "RESULT_PROPOSED" | "DISPUTED" | "ACTIVE";
   actorId: string | null;
+  feeOverrideBps?: number;
+  actorType?: string;
 }
 
 export async function settleBet(
@@ -33,7 +35,8 @@ export async function settleBet(
   }
 
   const potUnits = bet.stakeUnits * 2n;
-  const feeUnits = applyBps(potUnits, FEES.PLATFORM_BPS);
+  const feeBps = input.feeOverrideBps ?? FEES.PLATFORM_BPS;
+  const feeUnits = applyBps(potUnits, feeBps);
   const winnerPayout = potUnits - feeUnits;
 
   const winnerAcct = await getUserAccount(tx, winnerId);
@@ -84,7 +87,9 @@ export async function settleBet(
   }
 
   let actorType: string;
-  if (fromStatus === "ACTIVE" && actorId !== null) {
+  if (input.actorType) {
+    actorType = input.actorType;
+  } else if (fromStatus === "ACTIVE" && actorId !== null) {
     actorType = "POOL_CREATOR_RESOLVE";
   } else if (actorId === null) {
     actorType = "SYSTEM";
