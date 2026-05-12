@@ -83,7 +83,7 @@ getX({ id, userId? }): Promise<X | null>
 | Resource | WHERE-clause |
 |---|---|
 | `listBets` | `createdById = user.id OR opponentUserId = user.id` |
-| `listDisputes` | `openerId = user.id OR bet.createdById = user.id OR bet.opponentUserId = user.id` |
+| `listDisputes` | `openedById = user.id OR bet.createdById = user.id OR bet.opponentUserId = user.id` |
 | `listPools` | `createdById = user.id` |
 | `getBet` / `getDispute` / `getPool` | retourneer `null` (→ 404) als user geen owner/participant is |
 | `getMatch` | Match heeft geen direct User-relation. Access: user is creator van de parent Pool (`match.pool.createdById = user.id`) OF heeft ≥1 Bet op deze match (`bet.matchId = match.id AND (bet.createdById = user.id OR bet.opponentUserId = user.id)`). Anders `null` → 404. |
