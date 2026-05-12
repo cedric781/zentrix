@@ -1,22 +1,27 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireCurrentUser } from "@/lib/auth";
-import { createBet } from "@/lib/bets/service";
+import { confirmResult } from "@/lib/bets/service";
 import { parseIdempotencyKey } from "@/lib/http/idempotency";
 import { mapDomainError } from "@/lib/http/errors";
-import { serializeBet } from "@/lib/http/serialize";
+import {
+  serializeBet,
+  serializeBetParticipantConfirmation,
+} from "@/lib/http/serialize";
 
 export const runtime = "nodejs";
 
 const Body = z.object({
-  side: z.enum(["A", "B"]),
-  stakeUnits: z.string().regex(/^\d+$/, "stakeUnits must be a decimal string"),
-  expiresInHours: z.number().int().min(1).max(168),
-  poolId: z.string().min(1).optional(),
-  matchId: z.string().min(1).optional(),
+  decision: z.enum(["CONFIRM_WINNER", "DISAGREE"]),
+  claimedWinnerId: z.string().min(1).optional(),
 });
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: betId } = await params;
+
   let idempotencyKey: string;
   try {
     idempotencyKey = parseIdempotencyKey(req);
@@ -44,20 +49,18 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await createBet({
-      creatorId: user.id,
-      creatorSide: parsed.data.side,
-      stakeUnits: BigInt(parsed.data.stakeUnits),
-      expiresInHours: parsed.data.expiresInHours,
-      poolId: parsed.data.poolId,
-      matchId: parsed.data.matchId,
+    const result = await confirmResult({
+      betId,
+      callerId: user.id,
+      decision: parsed.data.decision,
+      claimedWinnerId: parsed.data.claimedWinnerId,
       idempotencyKey,
     });
 
     return NextResponse.json(
       {
         bet: serializeBet(result.bet),
-        inviteToken: result.inviteToken,
+        confirmation: serializeBetParticipantConfirmation(result.confirmation),
       },
       { headers: { "Idempotency-Key": idempotencyKey } },
     );
