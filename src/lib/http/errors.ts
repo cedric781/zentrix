@@ -1,0 +1,30 @@
+import "server-only";
+import { NextResponse } from "next/server";
+import { UnauthorizedError } from "@/lib/auth";
+import { BetError } from "@/lib/bets/errors";
+import { DisputeError } from "@/lib/disputes/errors";
+import { MatchError } from "@/lib/matches/errors";
+import { InvalidIdempotencyKeyError } from "./idempotency";
+
+export function mapDomainError(err: unknown): NextResponse | null {
+  if (err instanceof UnauthorizedError) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (err instanceof InvalidIdempotencyKeyError) {
+    return NextResponse.json(
+      { error: "INVALID_IDEMPOTENCY_KEY", message: err.message },
+      { status: 400 },
+    );
+  }
+  if (
+    err instanceof BetError ||
+    err instanceof DisputeError ||
+    err instanceof MatchError
+  ) {
+    return NextResponse.json(
+      { error: err.code, message: err.message },
+      { status: err.statusCode },
+    );
+  }
+  return null;
+}
