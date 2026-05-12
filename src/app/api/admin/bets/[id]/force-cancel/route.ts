@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 const ForceCancelBody = z.object({
   reason: z.string().min(10).max(1000),
-  actorAdminId: z.string().min(1).max(100),
+  actorAdminId: z.string().uuid("Invalid admin UUID"),
 });
 
 export async function POST(

@@ -14,6 +14,8 @@ import { forceCancelBet } from "@/lib/disputes/service";
 import { BetError } from "@/lib/bets/errors";
 import { mockBet, VALID_UUID } from "./_fixtures";
 
+const FAKE_ADMIN_ID = "00000000-0000-4000-8000-000000000001";
+
 const makeReq = (body: unknown) =>
   new Request("http://x/api/admin/bets/b1/force-cancel", {
     method: "POST",
@@ -38,7 +40,7 @@ describe("POST /api/admin/bets/[id]/force-cancel", () => {
     const res = await POST(
       makeReq({
         reason: "Bet contains illegal terms per platform policy.",
-        actorAdminId: "admin-rapha",
+        actorAdminId: FAKE_ADMIN_ID,
       }),
       ctx("b1"),
     );
@@ -49,7 +51,7 @@ describe("POST /api/admin/bets/[id]/force-cancel", () => {
     expect(forceCancelBet).toHaveBeenCalledWith(
       expect.objectContaining({
         betId: "b1",
-        adminId: "admin-rapha",
+        adminId: FAKE_ADMIN_ID,
         reason: "Bet contains illegal terms per platform policy.",
       }),
     );
@@ -63,7 +65,7 @@ describe("POST /api/admin/bets/[id]/force-cancel", () => {
     const res = await POST(
       makeReq({
         reason: "valid reason over 10 chars",
-        actorAdminId: "admin-rapha",
+        actorAdminId: FAKE_ADMIN_ID,
       }),
       ctx("b1"),
     );
@@ -73,7 +75,7 @@ describe("POST /api/admin/bets/[id]/force-cancel", () => {
   it("bad body (reason too short) → 400", async () => {
     (requireAdmin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     const res = await POST(
-      makeReq({ reason: "short", actorAdminId: "admin-rapha" }),
+      makeReq({ reason: "short", actorAdminId: FAKE_ADMIN_ID }),
       ctx("b1"),
     );
     expect(res.status).toBe(400);
@@ -88,11 +90,24 @@ describe("POST /api/admin/bets/[id]/force-cancel", () => {
     const res = await POST(
       makeReq({
         reason: "Bet was already settled, can't be cancelled.",
-        actorAdminId: "admin-rapha",
+        actorAdminId: FAKE_ADMIN_ID,
       }),
       ctx("b1"),
     );
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe("BET_INVALID_STATUS");
+  });
+
+  it("malformed actorAdminId → 400", async () => {
+    (requireAdmin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const res = await POST(
+      makeReq({
+        reason: "valid reason over 10 chars",
+        actorAdminId: "not-a-uuid",
+      }),
+      ctx("b1"),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("bad_body");
   });
 });

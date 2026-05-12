@@ -14,6 +14,8 @@ import { resolveDispute } from "@/lib/disputes/service";
 import { DisputeError } from "@/lib/disputes/errors";
 import { mockBet, mockDispute, VALID_UUID } from "./_fixtures";
 
+const FAKE_ADMIN_ID = "00000000-0000-4000-8000-000000000001";
+
 const makeReq = (body: unknown) =>
   new Request("http://x/api/admin/disputes/d1/resolve", {
     method: "POST",
@@ -44,7 +46,7 @@ describe("POST /api/admin/disputes/[id]/resolve", () => {
       makeReq({
         outcome: "CREATOR_WINS",
         reasoning: "Evidence shows creator side won.",
-        actorAdminId: "admin-rapha",
+        actorAdminId: FAKE_ADMIN_ID,
       }),
       ctx("d1"),
     );
@@ -56,7 +58,7 @@ describe("POST /api/admin/disputes/[id]/resolve", () => {
     expect(resolveDispute).toHaveBeenCalledWith(
       expect.objectContaining({
         disputeId: "d1",
-        adminId: "admin-rapha",
+        adminId: FAKE_ADMIN_ID,
         outcome: "CREATOR_WINS",
         adminNotes: "Evidence shows creator side won.",
       }),
@@ -72,7 +74,7 @@ describe("POST /api/admin/disputes/[id]/resolve", () => {
       makeReq({
         outcome: "CREATOR_WINS",
         reasoning: "test reasoning over 10 chars",
-        actorAdminId: "admin-rapha",
+        actorAdminId: FAKE_ADMIN_ID,
       }),
       ctx("d1"),
     );
@@ -85,7 +87,7 @@ describe("POST /api/admin/disputes/[id]/resolve", () => {
       makeReq({
         outcome: "INVALID",
         reasoning: "valid reasoning text",
-        actorAdminId: "admin-rapha",
+        actorAdminId: FAKE_ADMIN_ID,
       }),
       ctx("d1"),
     );
@@ -102,11 +104,25 @@ describe("POST /api/admin/disputes/[id]/resolve", () => {
       makeReq({
         outcome: "VOID",
         reasoning: "neither side provided sufficient evidence",
-        actorAdminId: "admin-rapha",
+        actorAdminId: FAKE_ADMIN_ID,
       }),
       ctx("d1"),
     );
     expect(res.status).toBe(404);
     expect((await res.json()).error).toBe("DISPUTE_NOT_FOUND");
+  });
+
+  it("malformed actorAdminId → 400", async () => {
+    (requireAdmin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    const res = await POST(
+      makeReq({
+        outcome: "CREATOR_WINS",
+        reasoning: "test reasoning over 10 chars",
+        actorAdminId: "not-a-uuid",
+      }),
+      ctx("d1"),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("bad_body");
   });
 });

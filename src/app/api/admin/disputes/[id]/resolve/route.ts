@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const ResolveDisputeBody = z.object({
   outcome: z.enum(["CREATOR_WINS", "OPPONENT_WINS", "VOID"]),
   reasoning: z.string().min(10).max(2000),
-  actorAdminId: z.string().min(1).max(100),
+  actorAdminId: z.string().uuid("Invalid admin UUID"),
 });
 
 export async function POST(
