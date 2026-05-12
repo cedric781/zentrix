@@ -41,7 +41,7 @@ export async function GET() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`expireOpenBet(${bet.id}): ${msg}`);
-        logger.warn("expireOpenBet error", { betId: bet.id, error: msg });
+        logger.warn({ betId: bet.id, error: msg }, "expireOpenBet error");
       }
     }
 
@@ -64,17 +64,20 @@ export async function GET() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`autoVoidProposedBet(${bet.id}): ${msg}`);
-        logger.warn("autoVoidProposedBet error", { betId: bet.id, error: msg });
+        logger.warn({ betId: bet.id, error: msg }, "autoVoidProposedBet error");
       }
     }
 
     const durationMs = Date.now() - startTime;
-    logger.info("cron expire-bets complete", {
-      expired: expiredCount,
-      voided: voidedCount,
-      errors: errors.length,
-      durationMs,
-    });
+    logger.info(
+      {
+        expired: expiredCount,
+        voided: voidedCount,
+        errors: errors.length,
+        durationMs,
+      },
+      "cron expire-bets complete",
+    );
 
     return NextResponse.json({
       ok: true,
@@ -85,7 +88,7 @@ export async function GET() {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error("cron expire-bets fatal error", { error: msg });
+    logger.error({ error: msg }, "cron expire-bets fatal error");
     return NextResponse.json(
       {
         ok: false,

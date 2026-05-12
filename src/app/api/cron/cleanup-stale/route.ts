@@ -31,11 +31,14 @@ export async function GET() {
     });
 
     const durationMs = Date.now() - startTime;
-    logger.info("cron cleanup-stale complete", {
-      invites: inviteResult.count,
-      keys: keyResult.count,
-      durationMs,
-    });
+    logger.info(
+      {
+        invites: inviteResult.count,
+        keys: keyResult.count,
+        durationMs,
+      },
+      "cron cleanup-stale complete",
+    );
 
     return NextResponse.json({
       ok: true,
@@ -45,7 +48,7 @@ export async function GET() {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error("cron cleanup-stale error", { error: msg });
+    logger.error({ error: msg }, "cron cleanup-stale error");
     return NextResponse.json(
       {
         ok: false,
