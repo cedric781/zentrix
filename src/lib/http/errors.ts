@@ -5,6 +5,7 @@ import { BetError } from "@/lib/bets/errors";
 import { DisputeError } from "@/lib/disputes/errors";
 import { MatchError } from "@/lib/matches/errors";
 import { InvalidIdempotencyKeyError } from "./idempotency";
+import { InvalidCursorError } from "./pagination";
 
 export function mapDomainError(err: unknown): NextResponse | null {
   if (err instanceof UnauthorizedError) {
@@ -13,6 +14,12 @@ export function mapDomainError(err: unknown): NextResponse | null {
   if (err instanceof InvalidIdempotencyKeyError) {
     return NextResponse.json(
       { error: "INVALID_IDEMPOTENCY_KEY", message: err.message },
+      { status: 400 },
+    );
+  }
+  if (err instanceof InvalidCursorError) {
+    return NextResponse.json(
+      { error: "INVALID_CURSOR", message: err.message },
       { status: 400 },
     );
   }

@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { BetStatus } from "@prisma/client";
 import { requireCurrentUser } from "@/lib/auth";
 import { createBet } from "@/lib/bets/service";
+import { listBets } from "@/lib/bets/read";
 import { parseIdempotencyKey } from "@/lib/http/idempotency";
+import { parseListQuery } from "@/lib/http/query";
 import { mapDomainError } from "@/lib/http/errors";
 import { serializeBet } from "@/lib/http/serialize";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const BetStatusEnum = z.enum(
+  Object.values(BetStatus) as [string, ...string[]],
+);
 
 const Body = z.object({
   side: z.enum(["A", "B"]),
@@ -61,6 +69,34 @@ export async function POST(req: Request) {
       },
       { headers: { "Idempotency-Key": idempotencyKey } },
     );
+  } catch (err) {
+    const mapped = mapDomainError(err);
+    if (mapped) return mapped;
+    throw err;
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const user = await requireCurrentUser();
+    const parsed = parseListQuery(req, BetStatusEnum);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "bad_query", issues: parsed.error.issues },
+        { status: 400 },
+      );
+    }
+    const { status, cursor, take } = parsed.data;
+    const result = await listBets({
+      userId: user.id,
+      status: status as BetStatus | undefined,
+      cursor,
+      take,
+    });
+    return NextResponse.json({
+      items: result.items.map(serializeBet),
+      nextCursor: result.nextCursor,
+    });
   } catch (err) {
     const mapped = mapDomainError(err);
     if (mapped) return mapped;

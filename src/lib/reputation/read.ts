@@ -1,0 +1,1 @@
+export { getUserReputation } from "./service";
