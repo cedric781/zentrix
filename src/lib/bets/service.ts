@@ -15,6 +15,8 @@ import { safeHashCompare } from "@/lib/crypto/safe-compare";
 import { settleBet } from "./settlement";
 import { trackReputationEvent } from "@/lib/reputation/service";
 
+export { expireOpenBet, autoVoidProposedBet } from "./expire";
+
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TOKEN_HEX = /^[0-9a-f]{64}$/;
 

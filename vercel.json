@@ -9,6 +9,14 @@
       "schedule": "*/2 * * * *"
     },
     {
+      "path": "/api/cron/expire-bets",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-stale",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/reconcile",
       "schedule": "*/15 * * * *"
     }

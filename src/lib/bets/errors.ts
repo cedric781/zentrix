@@ -17,7 +17,10 @@ export type BetErrorCode =
   | "BET_CONFIRM_BY_CLAIMANT"
   | "BET_DEADLINE_PASSED"
   | "BET_SETTLEMENT_LEDGER_ERROR"
-  | "BET_POOL_MATCH_NOT_OPEN";
+  | "BET_POOL_MATCH_NOT_OPEN"
+  | "BET_NOT_EXPIRED"
+  | "BET_NOT_VOIDED"
+  | "BET_NO_OPPONENT";
 
 export class BetError extends Error {
   constructor(
