@@ -18,10 +18,10 @@
 ## Design Decisions (locked)
 
 ### 1. Idempotency-Key — optioneel, server-side UUID fallback
-- Client mag `Idempotency-Key` header sturen (case-insensitive). Indien aanwezig: valideren `^[A-Za-z0-9_-]{8,128}$`. Invalide → 400 `INVALID_IDEMPOTENCY_KEY`.
+- Client mag `Idempotency-Key` header sturen (case-insensitive). Indien aanwezig: valideren als UUID v4 (`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i`). Invalide → 400 `INVALID_IDEMPOTENCY_KEY`.
 - Indien afwezig: server genereert `crypto.randomUUID()` server-side. Client krijgt de gebruikte key terug in response-header `Idempotency-Key` zodat retries dezelfde key kunnen sturen.
-- **Why:** Friendlier voor curl/manual testing en eerste UI iteratie zonder client-side key management, maar replay-safe is mogelijk zodra clients de key vasthouden. Services vereisen `idempotencyKey`-input — die contract houden we intact.
-- **Niet doen:** key uit body parsen (header-only conventie), key uit `userId+routePath+timestamp` afleiden (kan collide bij snelle dubbel-clicks).
+- **Why:** De service-laag (`assertUuidV4` in createBet/acceptBet/cancelBet/proposeResult/confirmResult) eist UUID v4. HTTP-laag spiegelt dat contract zodat client en server dezelfde definitie van "geldige key" hebben. Server-fallback met `crypto.randomUUID()` voldoet automatisch.
+- **Niet doen:** key uit body parsen (header-only conventie), key uit `userId+routePath+timestamp` afleiden (kan collide bij snelle dubbel-clicks), bredere regex toestaan (zou service-error doorlaten).
 
 ### 2. Caller-id is ALTIJD server-side uit `requireCurrentUser()`
 - Geen `userId`, `callerId`, `creatorId`, `opponentUserId`, `openerId`, `uploaderId` in body schemas.
@@ -122,12 +122,12 @@ const MatchResultBody = z.object({
 ### `idempotency.ts`
 ```ts
 import { randomUUID } from "node:crypto";
-const KEY_REGEX = /^[A-Za-z0-9_-]{8,128}$/;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class InvalidIdempotencyKeyError extends Error {}
 export function parseIdempotencyKey(req: Request): string {
-  const raw = req.headers.get("Idempotency-Key") ?? req.headers.get("idempotency-key");
+  const raw = req.headers.get("idempotency-key");
   if (raw === null || raw === "") return randomUUID();
-  if (!KEY_REGEX.test(raw)) throw new InvalidIdempotencyKeyError();
+  if (!UUID_V4.test(raw)) throw new InvalidIdempotencyKeyError();
   return raw;
 }
 ```
