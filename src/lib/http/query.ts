@@ -7,9 +7,7 @@ export const SortByEnum = z
   .optional()
   .default("createdAt");
 
-type ZodEnumLike = z.ZodEnum<[string, ...string[]]>;
-
-export function parseListQuery(req: Request, statusEnum: ZodEnumLike) {
+export function parseListQuery<T extends z.ZodType<string>>(req: Request, statusEnum: T) {
   const url = new URL(req.url);
   const raw = Object.fromEntries(url.searchParams.entries());
   const schema = z
@@ -21,7 +19,7 @@ export function parseListQuery(req: Request, statusEnum: ZodEnumLike) {
   return schema.safeParse(raw);
 }
 
-export function parseAdminListQuery(req: Request, statusEnum: ZodEnumLike) {
+export function parseAdminListQuery<T extends z.ZodType<string>>(req: Request, statusEnum: T) {
   const url = new URL(req.url);
   const raw = Object.fromEntries(url.searchParams.entries());
   const schema = z
