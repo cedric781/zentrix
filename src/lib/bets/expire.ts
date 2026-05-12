@@ -92,12 +92,15 @@ export async function expireOpenBet(
 
   const expiredBet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
 
-  logger.info("Bet expired", {
-    betId,
-    creatorId: bet.createdById,
-    refundUnits: bet.stakeUnits.toString(),
-    ledgerTxId: ledgerResult.transaction.id,
-  });
+  logger.info(
+    {
+      betId,
+      creatorId: bet.createdById,
+      refundUnits: bet.stakeUnits.toString(),
+      ledgerTxId: ledgerResult.transaction.id,
+    },
+    "Bet expired",
+  );
 
   return {
     bet: expiredBet,
@@ -204,13 +207,16 @@ export async function autoVoidProposedBet(
 
   const voidBet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
 
-  logger.info("Bet voided (confirmDeadline)", {
-    betId,
-    creatorId: bet.createdById,
-    opponentId: bet.opponentUserId,
-    refundUnitsPerUser: bet.stakeUnits.toString(),
-    ledgerTxId: ledgerResult.transaction.id,
-  });
+  logger.info(
+    {
+      betId,
+      creatorId: bet.createdById,
+      opponentId: bet.opponentUserId,
+      refundUnitsPerUser: bet.stakeUnits.toString(),
+      ledgerTxId: ledgerResult.transaction.id,
+    },
+    "Bet voided (confirmDeadline)",
+  );
 
   return {
     bet: voidBet,
