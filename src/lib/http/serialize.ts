@@ -2,6 +2,8 @@ import type {
   Bet,
   BetResultClaim,
   BetParticipantConfirmation,
+  Dispute,
+  Match,
 } from "@prisma/client";
 import { bigToStr } from "./bigint";
 
@@ -52,5 +54,39 @@ export function serializeBetParticipantConfirmation(
     decision: confirmation.decision,
     claimedWinnerId: confirmation.claimedWinnerId,
     createdAt: confirmation.createdAt.toISOString(),
+  };
+}
+
+export function serializeDispute(dispute: Dispute) {
+  return {
+    id: dispute.id,
+    betId: dispute.betId,
+    openedById: dispute.openedById,
+    reason: dispute.reason,
+    status: dispute.status,
+    outcome: dispute.outcome,
+    resolvedById: dispute.resolvedById,
+    resolvedAt: dispute.resolvedAt?.toISOString() ?? null,
+    depositLedgerTxId: dispute.depositLedgerTxId,
+    adminNotes: dispute.adminNotes,
+    createdAt: dispute.createdAt.toISOString(),
+    updatedAt: dispute.updatedAt.toISOString(),
+  };
+}
+
+export function serializeMatch(match: Match) {
+  return {
+    id: match.id,
+    poolId: match.poolId,
+    title: match.title,
+    description: match.description,
+    status: match.status,
+    winnerSide: match.winnerSide,
+    eventTime: match.eventTime?.toISOString() ?? null,
+    submittedAt: match.submittedAt?.toISOString() ?? null,
+    disputeWindowEndsAt: match.disputeWindowEndsAt?.toISOString() ?? null,
+    settledAt: match.settledAt?.toISOString() ?? null,
+    createdAt: match.createdAt.toISOString(),
+    updatedAt: match.updatedAt.toISOString(),
   };
 }
