@@ -4,7 +4,10 @@ import { z } from "zod";
 import { requireAdmin, AdminAuthError } from "@/lib/admin";
 import { mapDomainError } from "@/lib/http/errors";
 import { listUsersAdmin } from "@/lib/admin/users";
-import { bigToStr } from "@/lib/http/bigint";
+import {
+  serializeUserAdmin,
+  serializePagination,
+} from "@/lib/http/serialize";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,28 +40,15 @@ export async function GET(req: Request) {
     }
     const { offset, take, searchQ } = parsed.data;
     const result = await listUsersAdmin({ offset, take, searchQ });
-    return NextResponse.json({
-      items: result.items.map((u) => ({
-        id: u.id,
-        privyId: u.privyId,
-        email: u.email,
-        embeddedWalletAddress: u.embeddedWalletAddress,
-        createdAt: u.createdAt.toISOString(),
-        updatedAt: u.updatedAt.toISOString(),
-        financialAccount: u.financialAccount
-          ? {
-              id: u.financialAccount.id,
-              accountType: u.financialAccount.accountType,
-              balanceUnits: bigToStr(u.financialAccount.balanceUnits),
-              updatedAt: u.financialAccount.updatedAt.toISOString(),
-            }
-          : null,
-      })),
-      total: result.total,
-      offset: result.offset,
-      take: result.take,
-      hasMore: result.hasMore,
-    });
+    const items = result.items.map(serializeUserAdmin);
+    return NextResponse.json(
+      serializePagination(items, {
+        total: result.total,
+        offset: result.offset,
+        take: result.take,
+        hasMore: result.hasMore,
+      }),
+    );
   } catch (err) {
     const mapped = mapDomainError(err);
     if (mapped) return mapped;

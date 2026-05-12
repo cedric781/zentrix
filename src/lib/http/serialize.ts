@@ -3,7 +3,11 @@ import type {
   BetResultClaim,
   BetParticipantConfirmation,
   Dispute,
+  FinancialAccount,
   Match,
+  Pool,
+  User,
+  UserReputation,
 } from "@prisma/client";
 import { bigToStr } from "./bigint";
 
@@ -89,4 +93,85 @@ export function serializeMatch(match: Match) {
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
   };
+}
+
+export function serializeUser(user: User) {
+  return {
+    id: user.id,
+    email: user.email,
+    embeddedWalletAddress: user.embeddedWalletAddress,
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Admin variant: includes privyId for admin console / audit lookups.
+ * Should ONLY be used in /api/admin/* routes behind requireAdmin().
+ */
+export function serializeUserAdmin(
+  u: User & { financialAccount?: FinancialAccount | null },
+) {
+  return {
+    id: u.id,
+    privyId: u.privyId,
+    email: u.email,
+    embeddedWalletAddress: u.embeddedWalletAddress,
+    createdAt: u.createdAt.toISOString(),
+    updatedAt: u.updatedAt.toISOString(),
+    financialAccount: u.financialAccount
+      ? serializeFinancialAccount(u.financialAccount)
+      : null,
+  };
+}
+
+export function serializePool(pool: Pool) {
+  return {
+    id: pool.id,
+    createdById: pool.createdById,
+    title: pool.title,
+    description: pool.description,
+    status: pool.status,
+    bettingClosesAt: pool.bettingClosesAt.toISOString(),
+    createdAt: pool.createdAt.toISOString(),
+    updatedAt: pool.updatedAt.toISOString(),
+  };
+}
+
+export function serializeReputation(rep: UserReputation) {
+  return {
+    userId: rep.userId,
+    score: rep.score,
+    tier: rep.tier,
+    disputesOpened: rep.disputesOpened,
+    disputesWon: rep.disputesWon,
+    disputesLost: rep.disputesLost,
+    lastUpdatedAt: rep.lastUpdatedAt.toISOString(),
+  };
+}
+
+export function serializeFinancialAccount(fa: FinancialAccount) {
+  return {
+    id: fa.id,
+    accountType: fa.accountType,
+    balanceUnits: bigToStr(fa.balanceUnits),
+    updatedAt: fa.updatedAt.toISOString(),
+  };
+}
+
+export interface PaginationCursorMeta {
+  nextCursor: string | null;
+}
+
+export interface PaginationOffsetMeta {
+  total: number;
+  offset: number;
+  take: number;
+  hasMore: boolean;
+}
+
+export type PaginationMeta = PaginationCursorMeta | PaginationOffsetMeta;
+
+export function serializePagination<T>(items: T[], meta: PaginationMeta) {
+  return { items, ...meta };
 }

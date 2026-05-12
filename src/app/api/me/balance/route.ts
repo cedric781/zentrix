@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUser } from "@/lib/auth";
 import { mapDomainError } from "@/lib/http/errors";
-import { bigToStr } from "@/lib/http/bigint";
+import { serializeFinancialAccount } from "@/lib/http/serialize";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,14 +17,7 @@ export async function GET() {
     if (!fa) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
-    return NextResponse.json({
-      data: {
-        id: fa.id,
-        accountType: fa.accountType,
-        balanceUnits: bigToStr(fa.balanceUnits),
-        updatedAt: fa.updatedAt.toISOString(),
-      },
-    });
+    return NextResponse.json({ data: serializeFinancialAccount(fa) });
   } catch (err) {
     const mapped = mapDomainError(err);
     if (mapped) return mapped;

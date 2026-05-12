@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireCurrentUser } from "@/lib/auth";
 import { mapDomainError } from "@/lib/http/errors";
 import { getPool } from "@/lib/pools/read";
-import { serializeMatch } from "@/lib/http/serialize";
+import { serializeMatch, serializePool } from "@/lib/http/serialize";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,14 +21,7 @@ export async function GET(
     }
     return NextResponse.json({
       data: {
-        id: pool.id,
-        createdById: pool.createdById,
-        title: pool.title,
-        description: pool.description,
-        status: pool.status,
-        bettingClosesAt: pool.bettingClosesAt.toISOString(),
-        createdAt: pool.createdAt.toISOString(),
-        updatedAt: pool.updatedAt.toISOString(),
+        ...serializePool(pool),
         matches: pool.matches.map(serializeMatch),
       },
     });
