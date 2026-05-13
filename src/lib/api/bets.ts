@@ -65,3 +65,40 @@ export async function getBet(
     signal: options.signal,
   });
 }
+
+/**
+ * Accept an OPEN bet on behalf of the current user.
+ *
+ * Backend signature (src/app/api/bets/[id]/accept/route.ts):
+ *   - Required header: Idempotency-Key
+ *   - Optional body: { inviteToken?: string }
+ *   - Returns: { bet: BetSerialized }
+ *   - opponentUserId is resolved server-side from auth (not request body)
+ *
+ * Idempotency strategy: deterministic key per (user, intent, bet).
+ * Caller passes the userId resolved from useCurrentUser().
+ * Same user clicking accept twice generates the same key →
+ * backend dedupes and returns cached result (no double-debit).
+ */
+export async function acceptBet(
+  params: {
+    betId: string;
+    userId: string;
+    inviteToken?: string;
+  },
+  options: { signal?: AbortSignal } = {},
+): Promise<{ bet: BetSerialized }> {
+  const idempotencyKey = `${params.userId}:accept:${params.betId}`;
+  return apiFetch<{ bet: BetSerialized }>(
+    `/api/bets/${encodeURIComponent(params.betId)}/accept`,
+    {
+      method: "POST",
+      idempotencyKey,
+      body: params.inviteToken ? { inviteToken: params.inviteToken } : {},
+      signal: options.signal,
+      // Do NOT retry on transient: accept is state-changing, idempotency-key
+      // already protects against duplicates within the retry window.
+      retryAttempts: 0,
+    },
+  );
+}

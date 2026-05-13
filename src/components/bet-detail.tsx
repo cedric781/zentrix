@@ -2,28 +2,28 @@
 
 /**
  * BetDetail — single bet view with state-aware action buttons.
+ * B.5: wires acceptBet mutation with caller identity check via useCurrentUser.
  *
- * B.4 scope: read-only display + action button STUBS (no mutations).
- * Actions wire to handlers in B.5 (mutate-side: accept, propose result, etc).
+ * Caller permission rules (client-side UX; server enforces canonical):
+ *   - Accept button: enabled iff status===OPEN && user.id !== bet.createdById
+ *   - Other actions: still stubs until B.6+
  *
- * Per-status action matrix (caller identity from Privy):
- *   OPEN + not creator                → "Accept bet"
- *   ACTIVE + participant              → "Submit result"
- *   RESULT_PROPOSED + opponent        → "Confirm" / "Dispute"
- *   AWAITING_CONFIRMATION + opponent  → "Confirm result"
- *   SETTLED                           → show winner
- *   DISPUTED/EXPIRED/VOID/CANCELLED   → read-only with status reason
- *
- * Caller identity check uses Privy user.id mapped to backend userId.
- * NOTE: server enforces all state transitions — client buttons are UX only.
+ * Mutation flow:
+ *   1. useMutation(acceptBet) — disables button during fetch
+ *   2. On success: invalidate ["bet", id] + ["bets"] → fresh data
+ *   3. Toast feedback via sonner
  */
 
 import Link from "next/link";
-import { usePrivy } from "@privy-io/react-auth";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { acceptBet } from "@/lib/api/bets";
+import { ApiError } from "@/lib/api/client";
 import type { BetSerialized } from "@/lib/api/types";
 import type { BetStatus } from "@/lib/api/bets";
 
@@ -76,21 +76,15 @@ function statusVariant(status: BetStatus): StatusVariant {
 }
 
 export function BetDetail({ bet }: { bet: BetSerialized }) {
-  const { user } = usePrivy();
-  // Privy user.id is NOT the same as backend userId. Resolving the mapping
-  // requires a /api/me call (server resolves Privy DID -> internal User.id).
-  // For B.4 we use a heuristic: render all action buttons but disable them with
-  // a "wire-up in B.5" tooltip. B.5 introduces /api/me + permission resolver.
-  const callerKnown = Boolean(user);
-
   const status = bet.status as BetStatus;
+  const { data: me } = useCurrentUser();
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link href="/feed" className="text-sm text-muted-foreground hover:underline">
-            \u2190 Back to feed
+            &larr; Back to feed
           </Link>
           <h1 className="mt-2 text-3xl font-bold">
             {bet.creatorSide} <span className="text-muted-foreground">vs</span> {bet.acceptorSide}
@@ -154,7 +148,7 @@ export function BetDetail({ bet }: { bet: BetSerialized }) {
 
       <Separator />
 
-      <ActionPanel status={status} callerKnown={callerKnown} />
+      <ActionPanel bet={bet} status={status} myUserId={me?.id ?? null} />
     </div>
   );
 }
@@ -170,15 +164,60 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
   );
 }
 
-function ActionPanel({ status, callerKnown }: { status: BetStatus; callerKnown: boolean }) {
-  // All buttons disabled in B.4. B.5 wires real mutations + permission checks.
-  const disabledTitle = "Action handler comes in B.5";
+function ActionPanel({
+  bet,
+  status,
+  myUserId,
+}: {
+  bet: BetSerialized;
+  status: BetStatus;
+  myUserId: string | null;
+}) {
+  const queryClient = useQueryClient();
+
+  const acceptMutation = useMutation({
+    mutationFn: async () => {
+      if (!myUserId) throw new Error("Not signed in");
+      return acceptBet({ betId: bet.id, userId: myUserId });
+    },
+    onSuccess: () => {
+      toast.success("Bet accepted");
+      queryClient.invalidateQueries({ queryKey: ["bet", bet.id] });
+      queryClient.invalidateQueries({ queryKey: ["bets"] });
+    },
+    onError: (err) => {
+      if (err instanceof ApiError) {
+        toast.error(`Couldn\u2019t accept bet: ${err.message}`, { description: `Code: ${err.code}` });
+      } else {
+        toast.error(err instanceof Error ? err.message : "Unknown error");
+      }
+    },
+  });
 
   if (status === "OPEN") {
+    const isOwnBet = myUserId !== null && myUserId === bet.createdById;
+    const canAccept = myUserId !== null && !isOwnBet;
     return (
-      <div className="flex flex-wrap gap-2">
-        <Button disabled={!callerKnown} title={disabledTitle}>Accept bet</Button>
-        <Button variant="outline" disabled title={disabledTitle}>Cancel</Button>
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => acceptMutation.mutate()}
+            disabled={!canAccept || acceptMutation.isPending}
+          >
+            {acceptMutation.isPending ? "Accepting\u2026" : "Accept bet"}
+          </Button>
+          <Button variant="outline" disabled title="Cancel action comes in a later phase">
+            Cancel
+          </Button>
+        </div>
+        {isOwnBet && (
+          <p className="text-xs text-muted-foreground">
+            You created this bet \u2014 wait for someone to accept.
+          </p>
+        )}
+        {!myUserId && (
+          <p className="text-xs text-muted-foreground">Sign in to accept this bet.</p>
+        )}
       </div>
     );
   }
@@ -186,7 +225,9 @@ function ActionPanel({ status, callerKnown }: { status: BetStatus; callerKnown: 
   if (status === "ACTIVE") {
     return (
       <div className="flex flex-wrap gap-2">
-        <Button disabled title={disabledTitle}>Submit result</Button>
+        <Button disabled title="Submit result handler comes in a later phase">
+          Submit result
+        </Button>
       </div>
     );
   }
@@ -194,8 +235,10 @@ function ActionPanel({ status, callerKnown }: { status: BetStatus; callerKnown: 
   if (status === "RESULT_PROPOSED" || status === "AWAITING_CONFIRMATION") {
     return (
       <div className="flex flex-wrap gap-2">
-        <Button disabled title={disabledTitle}>Confirm result</Button>
-        <Button variant="destructive" disabled title={disabledTitle}>Dispute</Button>
+        <Button disabled title="Confirm handler comes in a later phase">Confirm result</Button>
+        <Button variant="destructive" disabled title="Dispute handler comes in a later phase">
+          Dispute
+        </Button>
       </div>
     );
   }
@@ -224,6 +267,5 @@ function ActionPanel({ status, callerKnown }: { status: BetStatus; callerKnown: 
     return <p className="text-sm text-muted-foreground">This bet was cancelled before acceptance.</p>;
   }
 
-  // DRAFT — not user-visible normally
   return <p className="text-sm text-muted-foreground">Draft \u2014 not yet open.</p>;
 }
