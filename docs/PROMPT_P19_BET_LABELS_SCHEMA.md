@@ -150,6 +150,21 @@ in env (Codespaces should have it via Vercel pull).
 
 If migration fails or schema drift detected: stop and report.
 
+
+### Step 2.5 — Update package.json build for Vercel deploy
+Edit package.json. Find:
+```json
+"build": "prisma generate && next build"
+```
+
+Change to:
+```json
+"build": "prisma migrate deploy && prisma generate && next build"
+```
+
+This makes Vercel run `prisma migrate deploy` (apply-only, no prompts) before
+build. Production DB gets new columns at PR merge time, fail-safe.
+
 ### Step 3 — Update body schema in route
 - Open `src/app/api/bets/route.ts`
 - Locate the Zod `Body` schema for POST handler
