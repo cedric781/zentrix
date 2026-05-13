@@ -30,15 +30,17 @@ export type PoolSerialized = ReturnType<typeof serializePool>;
 export type ReputationSerialized = ReturnType<typeof serializeReputation>;
 export type FinancialAccountSerialized = ReturnType<typeof serializeFinancialAccount>;
 
-export type PaginationMeta = {
-  nextCursor: string | null;
-  hasMore: boolean;
-  limit: number;
-};
-
+/**
+ * Backend pagination envelope from list endpoints.
+ * Actual shape from src/app/api/bets/route.ts (and others):
+ *   { items: T[], nextCursor: string | null }
+ *
+ * hasMore is derived: nextCursor !== null.
+ */
 export type Paginated<T> = {
   items: T[];
-} & PaginationMeta;
+  nextCursor: string | null;
+};
 
 export type ApiErrorBody = {
   error: string;

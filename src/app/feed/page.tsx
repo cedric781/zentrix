@@ -1,14 +1,9 @@
 "use client";
 
-/**
- * Feed placeholder for B.2 — confirms auth flow end-to-end.
- * B.3 will replace this with the real bet list.
- */
-
 import { usePrivy } from "@privy-io/react-auth";
 import { AuthGuard } from "@/components/auth-guard";
+import { BetList } from "@/components/bet-list";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function FeedPage() {
   return (
@@ -22,36 +17,20 @@ function FeedContent() {
   const { user, logout } = usePrivy();
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12">
+    <main className="mx-auto max-w-6xl px-6 py-12">
       <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Feed</h1>
-        <Button onClick={() => logout()} variant="outline">
+        <div>
+          <h1 className="text-3xl font-bold">My Bets</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {user?.email?.address ?? user?.wallet?.address ?? "Signed in"}
+          </p>
+        </div>
+        <Button onClick={() => logout()} variant="outline" size="sm">
           Sign out
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>You&apos;re signed in</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <div>
-            <span className="font-medium text-foreground">User ID:</span> {user?.id ?? "\u2014"}
-          </div>
-          <div>
-            <span className="font-medium text-foreground">Email:</span>{" "}
-            {user?.email?.address ?? "(not provided)"}
-          </div>
-          <div>
-            <span className="font-medium text-foreground">Wallet:</span>{" "}
-            {user?.wallet?.address ?? "(no wallet)"}
-          </div>
-        </CardContent>
-      </Card>
-
-      <p className="mt-8 text-sm text-muted-foreground">
-        Bet list coming in B.3.
-      </p>
+      <BetList />
     </main>
   );
 }
