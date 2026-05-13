@@ -3,10 +3,10 @@
 /**
  * Sign-in page — Privy login + post-login redirect.
  * - Validates ?next= as local path (prevents open-redirect / CWE-601).
- * - Watches authenticated state; redirects when ready.
+ * - useSearchParams requires Suspense boundary for static prerender.
  */
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const DEFAULT_REDIRECT = "/feed";
 
@@ -28,7 +29,7 @@ function safeRedirectTarget(next: string | null): string {
   return next;
 }
 
-export default function SignInPage() {
+function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { ready, authenticated, login } = usePrivy();
@@ -42,25 +43,47 @@ export default function SignInPage() {
   }, [ready, authenticated, router, redirectTo]);
 
   return (
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle className="text-2xl">Sign in to Zentrix</CardTitle>
+        <CardDescription>
+          Use email or your Solana wallet. A wallet is created automatically if you don&apos;t have one.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button
+          onClick={() => login()}
+          disabled={!ready || authenticated}
+          size="lg"
+          className="w-full"
+        >
+          {!ready ? "Loading…" : authenticated ? "Signing in…" : "Continue"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SignInFallback() {
+  return (
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <Skeleton className="h-7 w-40" />
+        <Skeleton className="mt-2 h-4 w-full" />
+      </CardHeader>
+      <CardContent>
+        <Skeleton className="h-11 w-full" />
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function SignInPage() {
+  return (
     <main className="flex min-h-screen items-center justify-center px-6 py-12">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl">Sign in to Zentrix</CardTitle>
-          <CardDescription>
-            Use email or your Solana wallet. A wallet is created automatically if you don&apos;t have one.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={() => login()}
-            disabled={!ready || authenticated}
-            size="lg"
-            className="w-full"
-          >
-            {!ready ? "Loading\u2026" : authenticated ? "Signing in\u2026" : "Continue"}
-          </Button>
-        </CardContent>
-      </Card>
+      <Suspense fallback={<SignInFallback />}>
+        <SignInContent />
+      </Suspense>
     </main>
   );
 }
