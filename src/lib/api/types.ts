@@ -48,3 +48,18 @@ export type ApiErrorBody = {
   error: string;
   message?: string;
 };
+
+// ── P30: external result providers ────────────────────────────────
+
+export type SupportedProvider = "espn" | "thesportsdb" | "football-data";
+
+export type SupportedSport =
+  | "football"
+  | "basketball"
+  | "american_football"
+  | "ice_hockey"
+  | "baseball"
+  | "tennis"
+  | "mma";
+
+export type CircuitBreakerState = "CLOSED" | "OPEN" | "HALF_OPEN";
