@@ -87,3 +87,30 @@ export type TemplateAllowedSource = {
   providerId: "espn" | "thesportsdb";
   type: string;
 };
+
+// ── Settlement (P26) ─────────────────────────────────────────────────
+// BetResultClaimSerialized and BetParticipantConfirmationSerialized are
+// already declared above via ReturnType<typeof serialize…>.
+
+export type ConfirmationDecision = "CONFIRM_WINNER" | "DISAGREE";
+
+export type ProposeResultBody = {
+  claimedWinnerId: string;
+  note?: string;
+};
+
+// Discriminated union: TS dwingt af dat DISAGREE altijd claimedWinnerId
+// meestuurt. Server checkt dezelfde regel runtime — dubbele bescherming.
+export type ConfirmResultBody =
+  | { decision: "CONFIRM_WINNER" }
+  | { decision: "DISAGREE"; claimedWinnerId: string };
+
+export type ProposeResultResponse = {
+  bet: BetSerialized;
+  claim: BetResultClaimSerialized;
+};
+
+export type ConfirmResultResponse = {
+  bet: BetSerialized;
+  confirmation: BetParticipantConfirmationSerialized;
+};

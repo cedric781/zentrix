@@ -7,7 +7,15 @@
  */
 
 import { apiFetch } from "./client";
-import type { BetSerialized, CreateBetExternalRef, Paginated } from "./types";
+import type {
+  BetSerialized,
+  CreateBetExternalRef,
+  Paginated,
+  ProposeResultBody,
+  ConfirmResultBody,
+  ProposeResultResponse,
+  ConfirmResultResponse,
+} from "./types";
 
 /** All status values from prisma/schema.prisma `enum BetStatus`. */
 export type BetStatus =
@@ -153,4 +161,68 @@ export async function createBet(
     // Financial action: never auto-retry. Caller-managed retry only.
     retryAttempts: 0,
   });
+}
+
+/**
+ * POST /api/bets/[id]/propose-result.
+ *
+ * Transitions bet ACTIVE → RESULT_PROPOSED server-side.
+ * Caller is recorded in BetResultClaim.claimedById.
+ *
+ * Idempotency: caller-supplied UUIDv4. Same key within retry window
+ * dedupes server-side (no duplicate claim).
+ *
+ * @throws ApiError on BET_INVALID_STATUS (409), BET_NOT_PARTICIPANT (403),
+ *   BET_INVALID_INPUT (400), UNAUTHORIZED (401).
+ */
+export async function proposeResult(
+  params: { betId: string } & ProposeResultBody,
+  options: { idempotencyKey: string; signal?: AbortSignal },
+): Promise<ProposeResultResponse> {
+  return apiFetch<ProposeResultResponse>(
+    `/api/bets/${encodeURIComponent(params.betId)}/propose-result`,
+    {
+      method: "POST",
+      idempotencyKey: options.idempotencyKey,
+      body: {
+        claimedWinnerId: params.claimedWinnerId,
+        ...(params.note !== undefined ? { note: params.note } : {}),
+      },
+      signal: options.signal,
+      retryAttempts: 0,
+    },
+  );
+}
+
+/**
+ * POST /api/bets/[id]/confirm-result.
+ *
+ * CONFIRM_WINNER → bet → SETTLED (payout same TX server-side).
+ * DISAGREE       → bet → DISPUTED (settlement paused, no payout).
+ *
+ * Idempotency: 2-laags. (1) caller UUIDv4 replay protection;
+ * (2) server natural-state: existing BetParticipantConfirmation row for
+ * (betId, userId) → cached result.
+ *
+ * @throws ApiError on BET_INVALID_STATUS (409), BET_NOT_PARTICIPANT (403),
+ *   BET_INVALID_INPUT (400 — DISAGREE without claimedWinnerId), UNAUTHORIZED (401).
+ */
+export async function confirmResult(
+  params: { betId: string } & ConfirmResultBody,
+  options: { idempotencyKey: string; signal?: AbortSignal },
+): Promise<ConfirmResultResponse> {
+  const body: Record<string, unknown> = { decision: params.decision };
+  if (params.decision === "DISAGREE") {
+    body.claimedWinnerId = params.claimedWinnerId;
+  }
+  return apiFetch<ConfirmResultResponse>(
+    `/api/bets/${encodeURIComponent(params.betId)}/confirm-result`,
+    {
+      method: "POST",
+      idempotencyKey: options.idempotencyKey,
+      body,
+      signal: options.signal,
+      retryAttempts: 0,
+    },
+  );
 }
