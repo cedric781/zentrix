@@ -19,7 +19,7 @@ export async function GET(
     if (!bet) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
-    return NextResponse.json({ data: serializeBet(bet) });
+    return NextResponse.json(serializeBet(bet));
   } catch (err) {
     const mapped = mapDomainError(err);
     if (mapped) return mapped;
