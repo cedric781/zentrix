@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePrivy } from "@privy-io/react-auth";
 import { AuthGuard } from "@/components/auth-guard";
 import { BetDetail } from "@/components/bet-detail";
+import { BetActionsSection } from "@/components/bets/bet-actions-section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,12 @@ function BetDetailContent({ id }: { id: string }) {
       )}
 
       {query.data && <BetDetail bet={query.data} />}
+
+      {query.data && (
+        <div className="mt-6">
+          <BetActionsSection betId={id} />
+        </div>
+      )}
     </main>
   );
 }
