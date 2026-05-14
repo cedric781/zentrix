@@ -72,6 +72,11 @@ enum SettlementMode {
   // ARBITER_REQUIRED, AUTO_VERIFY post-MVP — separate ADR
 }
 
+enum SettlementType {
+  BINARY // A wins or B wins
+  THRESHOLD // Above or below value
+}
+
 enum ResultStatus {
   PENDING
   PROPOSED
@@ -622,4 +627,33 @@ enum ReputationEventType {
   BET_EXPIRED
   ADMIN_PENALTY
   ADMIN_BONUS
+}
+
+model BetTemplate {
+  id                    String         @id @default(uuid())
+  slug                  String         @unique
+  name                  String
+  category              String
+  description           String?
+  settlementType        SettlementType @map("settlement_type")
+  outcomeType           String         @map("outcome_type")
+  fieldsSchema          Json           @map("fields_schema")
+  allowedSources        Json           @map("allowed_sources")
+  resolutionRule        String         @map("resolution_rule")
+  supportsAutoResolve   Boolean        @default(false) @map("supports_auto_resolve")
+  requiresOfficialEvent Boolean        @default(false) @map("requires_official_event")
+
+  // Zentrix improvements over Wager v2
+  isActive    Boolean   @default(true) @map("is_active")
+  version     Int       @default(1)
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@index([slug], map: "idx_bet_templates_slug")
+  @@index([category, isActive, deletedAt], map: "idx_bet_templates_category_active")
+  @@index([settlementType], map: "idx_bet_templates_settlement_type")
+  @@index([deletedAt, isActive], map: "idx_bet_templates_soft_delete")
+  @@map("bet_templates")
 }
