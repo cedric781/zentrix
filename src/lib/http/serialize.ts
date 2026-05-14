@@ -2,6 +2,7 @@ import type {
   Bet,
   BetResultClaim,
   BetParticipantConfirmation,
+  BetTemplate,
   Dispute,
   FinancialAccount,
   Match,
@@ -37,6 +38,28 @@ export function serializeBet(bet: Bet) {
     voidedAt: bet.voidedAt?.toISOString() ?? null,
     createdAt: bet.createdAt.toISOString(),
     updatedAt: bet.updatedAt.toISOString(),
+  };
+}
+
+export function serializeTemplate(template: BetTemplate) {
+  return {
+    id: template.id,
+    slug: template.slug,
+    name: template.name,
+    category: template.category,
+    description: template.description,
+    settlementType: template.settlementType,
+    settlementMethod: template.settlementMethod,
+    outcomeType: template.outcomeType,
+    fieldsSchema: template.fieldsSchema,
+    allowedSources: template.allowedSources,
+    resolutionRule: template.resolutionRule,
+    supportsAutoResolve: template.supportsAutoResolve,
+    requiresOfficialEvent: template.requiresOfficialEvent,
+    isActive: template.isActive,
+    version: template.version,
+    createdAt: template.createdAt.toISOString(),
+    updatedAt: template.updatedAt.toISOString(),
   };
 }
 
