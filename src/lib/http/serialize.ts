@@ -15,10 +15,13 @@ export function serializeBet(bet: Bet) {
   return {
     id: bet.id,
     status: bet.status,
+    title: bet.title,
     createdById: bet.createdById,
     opponentUserId: bet.opponentUserId,
     creatorSide: bet.creatorSide,
     acceptorSide: bet.acceptorSide,
+    outcomeA: bet.outcomeA,
+    outcomeB: bet.outcomeB,
     stakeUnits: bigToStr(bet.stakeUnits),
     settlementMode: bet.settlementMode,
     resultStatus: bet.resultStatus,

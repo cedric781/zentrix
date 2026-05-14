@@ -104,6 +104,9 @@ async function createPoolBet(
   stake: bigint = 50_000_000n,
 ) {
   const created = await createBet({
+    title: "Test bet",
+    outcomeA: "A wins",
+    outcomeB: "B wins",
     creatorId: creator.id,
     creatorSide: side,
     stakeUnits: stake,

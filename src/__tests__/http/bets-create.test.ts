@@ -21,6 +21,9 @@ describe("POST /api/bets", () => {
     side: "A",
     stakeUnits: "1000",
     expiresInHours: 24,
+    title: "Test bet",
+    outcomeA: "A wins",
+    outcomeB: "B wins",
   };
 
   it("A. happy path → 200 with serialized bet + inviteToken", async () => {

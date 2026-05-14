@@ -87,6 +87,9 @@ async function createAcceptedBet(
   stake: bigint = 50_000_000n,
 ): Promise<Bet> {
   const created = await createBet({
+    title: "Test bet",
+    outcomeA: "A wins",
+    outcomeB: "B wins",
     creatorId: creator.id,
     creatorSide: "A",
     stakeUnits: stake,
@@ -238,6 +241,9 @@ describe("proposeResult", () => {
   it("rejects when bet not ACTIVE (CANCELLED)", async () => {
     const creator = await makeUser("p-c4");
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -538,6 +544,9 @@ describe("Settlement edge cases", () => {
       data: { poolId: pool.id, title: "Match X" },
     });
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -594,6 +603,9 @@ describe("Settlement edge cases", () => {
   it("cancelled bet cannot be claimed", async () => {
     const creator = await makeUser("e-can-c");
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,

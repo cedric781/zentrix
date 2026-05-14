@@ -107,6 +107,9 @@ async function createPoolBet(
   stake: bigint = 50_000_000n,
 ): Promise<Bet> {
   const created = await createBet({
+    title: "Test bet",
+    outcomeA: "A wins",
+    outcomeB: "B wins",
     creatorId: creator.id,
     creatorSide: side,
     stakeUnits: stake,
@@ -383,6 +386,9 @@ describe("createBet matchId path + settleBet ACTIVE pad", () => {
     const match = await addScheduledMatch(pool, pc);
 
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: c1.id,
       creatorSide: "A",
       stakeUnits: STAKE,
@@ -415,6 +421,9 @@ describe("createBet matchId path + settleBet ACTIVE pad", () => {
 
     await expect(
       createBet({
+        title: "Test bet",
+        outcomeA: "A wins",
+        outcomeB: "B wins",
         creatorId: c1.id,
         creatorSide: "A",
         stakeUnits: STAKE,

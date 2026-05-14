@@ -27,6 +27,9 @@ export interface CreateBetInput {
   expiresInHours: number;
   poolId?: string;
   matchId?: string;
+  title: string;
+  outcomeA: string;
+  outcomeB: string;
   idempotencyKey: string;
 }
 
@@ -125,6 +128,9 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
     expiresInHours,
     poolId,
     matchId,
+    title,
+    outcomeA,
+    outcomeB,
     idempotencyKey,
   } = input;
 
@@ -253,6 +259,9 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
           expiresAt,
           poolId: poolId ?? null,
           matchId: matchId ?? null,
+          title,
+          outcomeA,
+          outcomeB,
         },
       });
     } catch (e) {

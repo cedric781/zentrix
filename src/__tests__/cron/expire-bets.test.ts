@@ -89,6 +89,9 @@ async function createOpenBet(
   stake: bigint = 25_000_000n,
 ): Promise<Bet> {
   const created = await createBet({
+    title: "Test bet",
+    outcomeA: "A wins",
+    outcomeB: "B wins",
     creatorId: creator.id,
     creatorSide: "A",
     stakeUnits: stake,
@@ -104,6 +107,9 @@ async function createAcceptedBet(
   stake: bigint = 25_000_000n,
 ): Promise<Bet> {
   const created = await createBet({
+    title: "Test bet",
+    outcomeA: "A wins",
+    outcomeB: "B wins",
     creatorId: creator.id,
     creatorSide: "A",
     stakeUnits: stake,
