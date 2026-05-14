@@ -133,6 +133,9 @@ describe("createBet", () => {
     const startBal = await userBalance(creator.id);
 
     const result = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: stake,
@@ -187,6 +190,9 @@ describe("createBet", () => {
     });
 
     const result = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: bettor.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -208,6 +214,9 @@ describe("createBet", () => {
 
     await expect(
       createBet({
+        title: "Test bet",
+        outcomeA: "A wins",
+        outcomeB: "B wins",
         creatorId: poor.id,
         creatorSide: "A",
         stakeUnits: 5_000_000n,
@@ -223,6 +232,9 @@ describe("createBet", () => {
   it("stake out-of-range — BET_INVALID_INPUT for under MIN, over MAX, and zero", async () => {
     const u = await makeUser("c-range");
     const baseInput = {
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: u.id,
       creatorSide: "A" as const,
       expiresInHours: 24,
@@ -245,6 +257,9 @@ describe("createBet", () => {
     const balStart = await userBalance(u.id);
 
     const r1 = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: u.id,
       creatorSide: "A",
       stakeUnits: stake,
@@ -255,6 +270,9 @@ describe("createBet", () => {
     expect(r1.inviteToken).toHaveLength(64);
 
     const r2 = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: u.id,
       creatorSide: "A",
       stakeUnits: stake,
@@ -287,6 +305,9 @@ describe("acceptBet", () => {
     const oppStart = await userBalance(opponent.id);
 
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: stake,
@@ -344,6 +365,9 @@ describe("acceptBet", () => {
     const creator = await makeUser("a-exp-c");
     const opp = await makeUser("a-exp-o");
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -366,6 +390,9 @@ describe("acceptBet", () => {
   it("self-accept blocked — BET_INVALID_INPUT", async () => {
     const creator = await makeUser("a-self");
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -386,6 +413,9 @@ describe("acceptBet", () => {
     const opp1 = await makeUser("a-race-o1");
     const opp2 = await makeUser("a-race-o2");
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -434,6 +464,9 @@ describe("cancelBet", () => {
     const stake = 5_000_000n;
     const startBal = await userBalance(u.id);
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: u.id,
       creatorSide: "A",
       stakeUnits: stake,
@@ -457,6 +490,9 @@ describe("cancelBet", () => {
     const creator = await makeUser("ca-c2");
     const stranger = await makeUser("ca-stranger");
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -479,6 +515,9 @@ describe("cancelBet", () => {
     const creator = await makeUser("ca-active-c");
     const opp = await makeUser("ca-active-o");
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: creator.id,
       creatorSide: "A",
       stakeUnits: 5_000_000n,
@@ -507,6 +546,9 @@ describe("cancelBet", () => {
     const stake = 5_000_000n;
     const startBal = await userBalance(u.id);
     const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
       creatorId: u.id,
       creatorSide: "A",
       stakeUnits: stake,
@@ -549,6 +591,9 @@ describe("trigger guard", () => {
     });
     await expect(
       createBet({
+        title: "Test bet",
+        outcomeA: "A wins",
+        outcomeB: "B wins",
         creatorId: poolCreator.id,
         creatorSide: "A",
         stakeUnits: 5_000_000n,

@@ -22,6 +22,9 @@ const Body = z.object({
   expiresInHours: z.number().int().min(1).max(168),
   poolId: z.string().min(1).optional(),
   matchId: z.string().min(1).optional(),
+  title: z.string().min(1).max(200),
+  outcomeA: z.string().min(1).max(100),
+  outcomeB: z.string().min(1).max(100),
 });
 
 export async function POST(req: Request) {
@@ -59,6 +62,9 @@ export async function POST(req: Request) {
       expiresInHours: parsed.data.expiresInHours,
       poolId: parsed.data.poolId,
       matchId: parsed.data.matchId,
+      title: parsed.data.title,
+      outcomeA: parsed.data.outcomeA,
+      outcomeB: parsed.data.outcomeB,
       idempotencyKey,
     });
 

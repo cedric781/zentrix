@@ -334,6 +334,9 @@ model Bet {
   opponentUserId String? @map("opponent_user_id")
   creatorSide    String  @map("creator_side")
   acceptorSide   String? @map("acceptor_side")
+  title          String  @default("")
+  outcomeA       String  @default("") @map("outcome_a")
+  outcomeB       String  @default("") @map("outcome_b")
   stakeUnits     BigInt  @map("stake_units")
 
   status         BetStatus      @default(DRAFT)
