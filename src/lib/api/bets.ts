@@ -102,3 +102,48 @@ export async function acceptBet(
     },
   );
 }
+
+/**
+ * Create a new peer-to-peer bet.
+ *
+ * Backend signature (src/app/api/bets/route.ts):
+ *   - Required header: Idempotency-Key (UUIDv4)
+ *   - Body: { side, stakeUnits (integer decimal string), expiresInHours (1-168),
+ *            title, outcomeA, outcomeB, poolId?, matchId? }
+ *   - Returns: { bet: BetSerialized, inviteToken: string }
+ *   - creatorId resolved server-side from auth (not request body)
+ *
+ * Idempotency: caller provides UUIDv4 per submission attempt (each submit =
+ * new key). Backend dedupes if same key reused (e.g. network retry).
+ */
+export type CreateBetInput = {
+  side: "A" | "B";
+  /** Decimal string of micro-USDC units (no fraction). Server validates `/^\d+$/`. */
+  stakeUnits: string;
+  /** 1-168 hours. */
+  expiresInHours: number;
+  title: string;
+  outcomeA: string;
+  outcomeB: string;
+  poolId?: string;
+  matchId?: string;
+};
+
+export type CreateBetResponse = {
+  bet: BetSerialized;
+  inviteToken: string;
+};
+
+export async function createBet(
+  input: CreateBetInput,
+  options: { idempotencyKey: string; signal?: AbortSignal },
+): Promise<CreateBetResponse> {
+  return apiFetch<CreateBetResponse>(`/api/bets`, {
+    method: "POST",
+    idempotencyKey: options.idempotencyKey,
+    body: input,
+    signal: options.signal,
+    // Financial action: never auto-retry. Caller-managed retry only.
+    retryAttempts: 0,
+  });
+}
