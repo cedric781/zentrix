@@ -52,3 +52,4 @@ prisma/migrations/dev/
 .claude/
 # pnpm only — block npm lockfile drift
 package-lock.json
+.env*.local
