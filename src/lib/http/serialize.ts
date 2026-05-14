@@ -12,7 +12,16 @@ import type {
 } from "@prisma/client";
 import { bigToStr } from "./bigint";
 
-export function serializeBet(bet: Bet) {
+/**
+ * Bet with optional hydrated latest claim. Callers that include
+ * `resultClaims[0]` pass it via this shape; callers without include
+ * pass plain Bet (latestClaim defaults to undefined → serialized null).
+ */
+export type BetWithLatestClaim = Bet & {
+  latestClaim?: BetResultClaim | null;
+};
+
+export function serializeBet(bet: BetWithLatestClaim) {
   return {
     id: bet.id,
     status: bet.status,
@@ -41,6 +50,9 @@ export function serializeBet(bet: Bet) {
     isCustom: bet.isCustom,
     createdAt: bet.createdAt.toISOString(),
     updatedAt: bet.updatedAt.toISOString(),
+    latestClaim: bet.latestClaim
+      ? serializeBetResultClaim(bet.latestClaim)
+      : null,
   };
 }
 
