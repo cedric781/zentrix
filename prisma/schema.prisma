@@ -385,6 +385,7 @@ model Bet {
   confirmations    BetParticipantConfirmation[]
   resultClaims     BetResultClaim[]
   disputes         Dispute[]
+  externalRef      BetExternalRef?
 
   @@index([status], map: "idx_bets_status")
   @@index([createdById, createdAt], map: "idx_bets_creator_created")
@@ -626,6 +627,7 @@ model ReputationEvent {
 
 enum ReputationEventType {
   BET_SETTLED_CLEAN
+  BET_SETTLED_AUTO
   DISPUTE_OPENED
   DISPUTE_WON
   DISPUTE_LOST
@@ -664,4 +666,80 @@ model BetTemplate {
   @@index([settlementType], map: "idx_bet_templates_settlement_type")
   @@index([deletedAt, isActive], map: "idx_bet_templates_soft_delete")
   @@map("bet_templates")
+}
+
+// ── P30: External event references ──────────────────────────────────
+//
+// Sparse 1:1 met Bet. Alleen bets met settlementMethod=OFFICIAL_RESULT
+// hebben een ref. Cron-worker queryt op (provider, eventEndsAt, processedAt).
+//
+// Provider naming convention:
+//   "espn"          → ESPN public endpoints
+//   "thesportsdb"   → TheSportsDB free tier
+//   "football-data" → Football-data.org free tier
+//
+// Status fields:
+//   processedAt   → laatste cron processing attempt
+//   resolvedAt    → succesvol opgelost (winnerSide bekend)
+//   failedAt      → permanent failed (max retries reached, escalates manual)
+//   retryCount    → hoeveelheid cron pogingen
+//
+// Index strategy:
+//   (provider, eventEndsAt) → cron's primary query
+//   (eventEndsAt)            → fallback alle-providers scan
+//   (betId)                  → lookup from bet page (already @unique)
+model BetExternalRef {
+  id            String   @id @default(uuid())
+  betId         String   @unique @map("bet_id")
+  provider      String
+  eventId       String   @map("event_id")
+  league        String
+  sport         String
+  eventStartsAt DateTime @map("event_starts_at")
+  eventEndsAt   DateTime @map("event_ends_at")
+
+  // Processing state
+  processedAt DateTime? @map("processed_at")
+  resolvedAt  DateTime? @map("resolved_at")
+  failedAt    DateTime? @map("failed_at")
+  retryCount  Int       @default(0) @map("retry_count")
+  lastError   String?   @map("last_error")
+
+  // Resolution outcome (cached zodat we backend kunnen reconstrueren)
+  resolvedWinnerSide String? @map("resolved_winner_side")
+  resolvedPayload    Json?   @map("resolved_payload")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bet Bet @relation(fields: [betId], references: [id], onDelete: Cascade)
+
+  @@index([provider, eventEndsAt], map: "idx_bet_external_refs_provider_ends")
+  @@index([eventEndsAt], map: "idx_bet_external_refs_ends")
+  @@index([processedAt], map: "idx_bet_external_refs_processed")
+  @@map("bet_external_refs")
+}
+
+// ── Provider health (circuit breaker state) ──────────────────────────
+//
+// Per provider: window van laatste N requests + failure rate.
+// Cron checkt voor elke fetch of provider OPEN/HALF_OPEN/CLOSED.
+// State is shared across serverless invocations (in-memory zou niet werken).
+//
+// State transitions:
+//   CLOSED          → normaal verkeer
+//   OPEN            → geen requests, cooldown actief
+//   HALF_OPEN       → één probe request toegestaan
+model ExternalProviderHealth {
+  provider      String    @id
+  state         String    @default("CLOSED")
+  failureCount  Int       @default(0) @map("failure_count")
+  successCount  Int       @default(0) @map("success_count")
+  totalRequests Int       @default(0) @map("total_requests")
+  lastFailureAt DateTime? @map("last_failure_at")
+  lastSuccessAt DateTime? @map("last_success_at")
+  cooldownUntil DateTime? @map("cooldown_until")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("external_provider_health")
 }
