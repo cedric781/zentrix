@@ -77,6 +77,13 @@ enum SettlementType {
   THRESHOLD // Above or below value
 }
 
+enum SettlementMethod {
+  OFFICIAL_RESULT
+  ORACLE_VALUE
+  PLATFORM_PROOF
+  THRESHOLD_METRIC
+}
+
 enum ResultStatus {
   PENDING
   PROPOSED
@@ -630,18 +637,19 @@ enum ReputationEventType {
 }
 
 model BetTemplate {
-  id                    String         @id @default(uuid())
-  slug                  String         @unique
+  id                    String           @id @default(uuid())
+  slug                  String           @unique
   name                  String
   category              String
   description           String?
-  settlementType        SettlementType @map("settlement_type")
-  outcomeType           String         @map("outcome_type")
-  fieldsSchema          Json           @map("fields_schema")
-  allowedSources        Json           @map("allowed_sources")
-  resolutionRule        String         @map("resolution_rule")
-  supportsAutoResolve   Boolean        @default(false) @map("supports_auto_resolve")
-  requiresOfficialEvent Boolean        @default(false) @map("requires_official_event")
+  settlementType        SettlementType   @map("settlement_type")
+  settlementMethod      SettlementMethod @default(PLATFORM_PROOF) @map("settlement_method")
+  outcomeType           String           @map("outcome_type")
+  fieldsSchema          Json             @map("fields_schema")
+  allowedSources        Json             @map("allowed_sources")
+  resolutionRule        String           @map("resolution_rule")
+  supportsAutoResolve   Boolean          @default(false) @map("supports_auto_resolve")
+  requiresOfficialEvent Boolean          @default(false) @map("requires_official_event")
 
   // Zentrix improvements over Wager v2
   isActive    Boolean   @default(true) @map("is_active")
