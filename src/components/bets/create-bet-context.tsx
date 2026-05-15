@@ -12,8 +12,11 @@
  * sports template doesn't wipe an in-progress stake input).
  */
 
-import { createContext, useContext, useState, type ReactNode } from "react";
-import type { BetTemplateSerialized } from "@/lib/api/types";
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import type {
+  BetTemplateSerialized,
+  CreateBetExternalRef,
+} from "@/lib/api/types";
 
 type CreateBetState = {
   template: BetTemplateSerialized | null;
@@ -32,6 +35,9 @@ type CreateBetState = {
   expiresInHours: number;
   setExpiresInHours: (n: number) => void;
 
+  externalRef: CreateBetExternalRef | null;
+  setExternalRef: (ref: CreateBetExternalRef | null) => void;
+
   reset: () => void;
 };
 
@@ -45,6 +51,12 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
   const [side, setSide] = useState<"A" | "B">("A");
   const [stakeUnits, setStakeUnits] = useState("");
   const [expiresInHours, setExpiresInHours] = useState(24);
+  const [externalRef, setExternalRefState] = useState<CreateBetExternalRef | null>(null);
+
+  // useCallback so ExternalEventPicker's useEffect dep array stays stable.
+  const setExternalRef = useCallback((ref: CreateBetExternalRef | null) => {
+    setExternalRefState(ref);
+  }, []);
 
   const handleSetTemplate = (t: BetTemplateSerialized | null) => {
     setTemplate(t);
@@ -62,6 +74,7 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
     setSide("A");
     setStakeUnits("");
     setExpiresInHours(24);
+    setExternalRefState(null);
   };
 
   return (
@@ -81,6 +94,8 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
         setStakeUnits,
         expiresInHours,
         setExpiresInHours,
+        externalRef,
+        setExternalRef,
         reset,
       }}
     >
