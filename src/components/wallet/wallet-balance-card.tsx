@@ -1,6 +1,7 @@
 "use client";
 
-import { Copy, Wallet } from "lucide-react";
+import { useState } from "react";
+import { ArrowDownToLine, Copy, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { usePrivy } from "@privy-io/react-auth";
 
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatUsdc } from "@/lib/money/units";
 import { useBalance } from "@/hooks/use-balance";
+import { DepositModal } from "./deposit-modal";
 
 const BRAND_BLUE = "#2563EB";
 
@@ -28,10 +30,12 @@ function truncateAddress(address: string): string {
 export function WalletBalanceCard() {
   const { user } = usePrivy();
   const { data, isLoading, error, refetch, isRefetching } = useBalance();
+  const [depositOpen, setDepositOpen] = useState(false);
 
   const walletAddress = user?.wallet?.address ?? null;
 
   return (
+    <>
     <Card data-slot="wallet-balance-card">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -95,8 +99,22 @@ export function WalletBalanceCard() {
             </Button>
           </div>
         ) : null}
+
+        <div className="flex gap-2 pt-1">
+          <Button
+            type="button"
+            size="sm"
+            className="gap-2"
+            onClick={() => setDepositOpen(true)}
+          >
+            <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
+            Deposit
+          </Button>
+        </div>
       </CardContent>
     </Card>
+    <DepositModal open={depositOpen} onOpenChange={setDepositOpen} />
+    </>
   );
 }
 
