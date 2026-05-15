@@ -29,35 +29,33 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   );
 
-  if (!PRIVY_APP_ID) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error(
-        "NEXT_PUBLIC_PRIVY_APP_ID is not set. Configure in .env.local or hosting env.",
-      );
-    }
-    return (
-      <QueryClientProvider client={queryClient}>
-        <DevModeAuthBanner />
-        {children}
-        <Toaster />
-      </QueryClientProvider>
+  if (!PRIVY_APP_ID && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_PRIVY_APP_ID is not set. Configure in .env.local or hosting env.",
     );
   }
 
   return (
-    <PrivyProvider
-      appId={PRIVY_APP_ID}
-      config={{
-        loginMethods: ["email", "wallet"],
-        embeddedWallets: { solana: { createOnLogin: "users-without-wallets" } },
-        appearance: { theme: "light", accentColor: "#0ea5e9" },
-      }}
-    >
-      <QueryClientProvider client={queryClient}>
-        {children}
-        <Toaster />
-      </QueryClientProvider>
-    </PrivyProvider>
+    <QueryClientProvider client={queryClient}>
+      {!PRIVY_APP_ID ? (
+        <>
+          <DevModeAuthBanner />
+          {children}
+        </>
+      ) : (
+        <PrivyProvider
+          appId={PRIVY_APP_ID}
+          config={{
+            loginMethods: ["email", "wallet"],
+            embeddedWallets: { solana: { createOnLogin: "users-without-wallets" } },
+            appearance: { theme: "light", accentColor: "#0ea5e9" },
+          }}
+        >
+          {children}
+        </PrivyProvider>
+      )}
+      <Toaster />
+    </QueryClientProvider>
   );
 }
 
