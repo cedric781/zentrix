@@ -3,7 +3,7 @@
  */
 
 import { apiFetch } from "./client";
-import type { UserSerialized } from "./types";
+import type { UserSerialized, FinancialAccountSerialized } from "./types";
 
 export async function getMe(
   options: { signal?: AbortSignal } = {},
@@ -12,4 +12,14 @@ export async function getMe(
     method: "GET",
     signal: options.signal,
   });
+}
+
+export async function getMyBalance(
+  options: { signal?: AbortSignal } = {},
+): Promise<FinancialAccountSerialized> {
+  const res = await apiFetch<{ data: FinancialAccountSerialized }>(
+    "/api/me/balance",
+    { method: "GET", signal: options.signal },
+  );
+  return res.data;
 }
