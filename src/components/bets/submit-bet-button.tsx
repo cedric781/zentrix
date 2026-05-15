@@ -41,6 +41,7 @@ export function SubmitBetButton() {
         side: state.side,
         stakeUnits: stakeMicroUnits,
         expiresInHours: state.expiresInHours,
+        externalRef: state.externalRef ?? undefined,
       },
       {
         onSuccess: (data) => {
