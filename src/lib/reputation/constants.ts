@@ -3,6 +3,7 @@ import type { ReputationEventType } from "@prisma/client";
 
 export const REPUTATION_DELTAS: Record<ReputationEventType, number> = {
   BET_SETTLED_CLEAN: 2,
+  BET_SETTLED_AUTO: 2,
   DISPUTE_OPENED: -5,
   DISPUTE_WON: 15,
   DISPUTE_LOST: -25,

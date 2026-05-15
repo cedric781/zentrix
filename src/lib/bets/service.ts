@@ -14,6 +14,7 @@ import { getOrCreateBetEscrowAccount } from "./escrow";
 import { safeHashCompare } from "@/lib/crypto/safe-compare";
 import { settleBet } from "./settlement";
 import { trackReputationEvent } from "@/lib/reputation/service";
+import { isSupportedSport } from "@/lib/api/types";
 
 export { expireOpenBet, autoVoidProposedBet } from "./expire";
 
@@ -31,6 +32,14 @@ export interface CreateBetInput {
   outcomeA: string;
   outcomeB: string;
   idempotencyKey: string;
+  externalRef?: {
+    provider: string;
+    eventId: string;
+    league: string;
+    sport: string;
+    eventStartsAt: Date;
+    eventEndsAt: Date;
+  };
 }
 
 export interface CreateBetResult {
@@ -157,6 +166,13 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
     expiresInHours > 720
   ) {
     throw new BetError("BET_INVALID_INPUT", `expiresInHours must be 1..720`, 400);
+  }
+  if (input.externalRef && !isSupportedSport(input.externalRef.sport)) {
+    throw new BetError(
+      "BET_INVALID_INPUT",
+      `Unsupported sport: ${input.externalRef.sport}`,
+      400,
+    );
   }
   if (matchId && !poolId) {
     throw new BetError(
@@ -320,6 +336,20 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
         `Bet ${bet.id} concurrently mutated`,
         409,
       );
+    }
+
+    if (input.externalRef) {
+      await tx.betExternalRef.create({
+        data: {
+          betId: bet.id,
+          provider: input.externalRef.provider,
+          eventId: input.externalRef.eventId,
+          league: input.externalRef.league,
+          sport: input.externalRef.sport,
+          eventStartsAt: input.externalRef.eventStartsAt,
+          eventEndsAt: input.externalRef.eventEndsAt,
+        },
+      });
     }
 
     // j. Audit transition.
