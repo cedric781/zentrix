@@ -1,0 +1,300 @@
+import "server-only";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
+import { fetchExternalResult, NoProviderAvailableError } from "./router";
+import { CircuitOpenError } from "./circuit-breaker";
+import { mapWinner } from "./winner-mapping";
+import { trackReputationEvent } from "@/lib/reputation/service";
+import type { SupportedSport } from "@/lib/api/types";
+
+const BATCH_SIZE = 50;
+const MAX_RETRIES = 5;
+
+export type ResolveBatchStats = {
+  total: number;
+  resolved: number;
+  voided: number;
+  escalated: number;
+  skipped: number;
+  failed: number;
+};
+
+type RefWithBet = Prisma.BetExternalRefGetPayload<{
+  include: {
+    bet: {
+      select: {
+        id: true;
+        status: true;
+        outcomeA: true;
+        outcomeB: true;
+        creatorSide: true;
+        createdById: true;
+        opponentUserId: true;
+        version: true;
+      };
+    };
+  };
+}>;
+
+type Outcome = "resolved" | "voided" | "escalated" | "skipped" | "failed";
+
+export async function resolveBetsBatch(): Promise<ResolveBatchStats> {
+  const now = new Date();
+
+  const refs = await prisma.betExternalRef.findMany({
+    where: {
+      eventEndsAt: { lte: now },
+      processedAt: null,
+      failedAt: null,
+      resolvedAt: null,
+      bet: {
+        status: { in: ["ACTIVE", "RESULT_PROPOSED", "AWAITING_CONFIRMATION"] },
+      },
+    },
+    include: {
+      bet: {
+        select: {
+          id: true,
+          status: true,
+          outcomeA: true,
+          outcomeB: true,
+          creatorSide: true,
+          createdById: true,
+          opponentUserId: true,
+          version: true,
+        },
+      },
+    },
+    take: BATCH_SIZE,
+    orderBy: { eventEndsAt: "asc" },
+  });
+
+  const stats: ResolveBatchStats = {
+    total: refs.length,
+    resolved: 0,
+    voided: 0,
+    escalated: 0,
+    skipped: 0,
+    failed: 0,
+  };
+
+  for (const ref of refs) {
+    try {
+      const outcome = await processSingleRef(ref);
+      stats[outcome]++;
+    } catch (err) {
+      logger.error(
+        { refId: ref.id, betId: ref.betId, error: err instanceof Error ? err.message : "unknown" },
+        "resolve-bets: unexpected error",
+      );
+      stats.failed++;
+    }
+  }
+
+  logger.info({ ...stats }, "resolve-bets batch complete");
+  return stats;
+}
+
+async function processSingleRef(ref: RefWithBet): Promise<Outcome> {
+  let result;
+  let provider: string;
+  try {
+    const fetched = await fetchExternalResult({
+      eventId: ref.eventId,
+      league: ref.league,
+      sport: ref.sport as SupportedSport,
+    });
+    result = fetched.result;
+    provider = fetched.provider;
+  } catch (err) {
+    return await handleFetchFailure(ref, err);
+  }
+
+  const mapping = mapWinner(result, ref.bet, ref.sport as SupportedSport);
+
+  switch (mapping.kind) {
+    case "not_ready":
+      return "skipped";
+
+    case "resolved":
+      await commitWinnerResolution({
+        ref,
+        winnerSide: mapping.winnerSide,
+        winnerUserId: mapping.winnerUserId,
+        matchedTeam: mapping.matchedTeam,
+        provider,
+        rawResult: result,
+      });
+      return "resolved";
+
+    case "draw":
+      await commitVoid({ ref, reason: `draw: ${mapping.reason}`, rawResult: result });
+      return "voided";
+
+    case "failed":
+      if (mapping.reason === "postponed") {
+        return await scheduleRetry(ref, "event_postponed");
+      }
+      await commitVoid({ ref, reason: `event_${mapping.reason}`, rawResult: result });
+      return "voided";
+
+    case "ambiguous":
+      await escalateToManual(ref, mapping.reason);
+      return "escalated";
+
+    default: {
+      const _exhaustive: never = mapping;
+      void _exhaustive;
+      logger.error({ refId: ref.id }, "resolve-bets: unexpected mapping kind");
+      return "failed";
+    }
+  }
+}
+
+async function handleFetchFailure(ref: RefWithBet, err: unknown): Promise<Outcome> {
+  const isCircuitOpen = err instanceof CircuitOpenError;
+  const isNoProvider = err instanceof NoProviderAvailableError;
+  const message = err instanceof Error ? err.message : "unknown";
+
+  if (isCircuitOpen) {
+    logger.warn({ refId: ref.id, message }, "resolve-bets: circuit open, skipping");
+    return "skipped";
+  }
+
+  if (ref.retryCount >= MAX_RETRIES) {
+    await escalateToManual(ref, `max_retries_exceeded: ${message}`);
+    return "escalated";
+  }
+
+  await prisma.betExternalRef.update({
+    where: { id: ref.id },
+    data: {
+      retryCount: { increment: 1 },
+      lastError: message.slice(0, 1000),
+    },
+  });
+
+  logger.info(
+    { refId: ref.id, retryCount: ref.retryCount + 1, isNoProvider },
+    "resolve-bets: scheduled retry",
+  );
+  return "skipped";
+}
+
+async function scheduleRetry(ref: RefWithBet, reason: string): Promise<Outcome> {
+  if (ref.retryCount >= MAX_RETRIES) {
+    await commitVoid({ ref, reason: `${reason}_max_retries`, rawResult: null });
+    return "voided";
+  }
+  await prisma.betExternalRef.update({
+    where: { id: ref.id },
+    data: {
+      retryCount: { increment: 1 },
+      lastError: reason,
+    },
+  });
+  return "skipped";
+}
+
+async function commitWinnerResolution(params: {
+  ref: RefWithBet;
+  winnerSide: "A" | "B";
+  winnerUserId: string;
+  matchedTeam: string;
+  provider: string;
+  rawResult: unknown;
+}): Promise<void> {
+  const { ref, winnerSide, winnerUserId, matchedTeam, provider, rawResult } = params;
+
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.bet.updateMany({
+      where: { id: ref.bet.id, version: ref.bet.version },
+      data: {
+        status: "SETTLED",
+        winnerId: winnerUserId,
+        resultStatus: "CONFIRMED",
+        settledAt: new Date(),
+        version: { increment: 1 },
+      },
+    });
+    if (updated.count !== 1) {
+      throw new Error(`bet_version_mismatch: ${ref.bet.id}`);
+    }
+
+    await tx.betExternalRef.update({
+      where: { id: ref.id },
+      data: {
+        processedAt: new Date(),
+        resolvedAt: new Date(),
+        resolvedWinnerSide: winnerSide,
+        resolvedPayload: rawResult as Prisma.InputJsonValue,
+      },
+    });
+
+    await trackReputationEvent({
+      tx,
+      userId: winnerUserId,
+      eventType: "BET_SETTLED_AUTO",
+      refType: "BET",
+      refId: ref.bet.id,
+    });
+
+    // TODO P30.1: ledger payout via P22 settlement service.
+    // Currently only status flips — payout claimed via existing /bets/[id] flow.
+
+    logger.info(
+      { betId: ref.bet.id, winnerSide, matchedTeam, provider },
+      "resolve-bets: settled",
+    );
+  });
+}
+
+async function commitVoid(params: {
+  ref: RefWithBet;
+  reason: string;
+  rawResult: unknown;
+}): Promise<void> {
+  const { ref, reason, rawResult } = params;
+
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.bet.updateMany({
+      where: { id: ref.bet.id, version: ref.bet.version },
+      data: {
+        status: "VOID",
+        resultStatus: "OVERRIDDEN",
+        voidedAt: new Date(),
+        version: { increment: 1 },
+      },
+    });
+    if (updated.count !== 1) {
+      throw new Error(`bet_version_mismatch: ${ref.bet.id}`);
+    }
+
+    await tx.betExternalRef.update({
+      where: { id: ref.id },
+      data: {
+        processedAt: new Date(),
+        resolvedAt: new Date(),
+        resolvedWinnerSide: "VOID",
+        resolvedPayload: rawResult as Prisma.InputJsonValue,
+        lastError: reason,
+      },
+    });
+
+    logger.info({ betId: ref.bet.id, reason }, "resolve-bets: voided");
+  });
+}
+
+async function escalateToManual(ref: RefWithBet, reason: string): Promise<void> {
+  await prisma.betExternalRef.update({
+    where: { id: ref.id },
+    data: {
+      processedAt: new Date(),
+      failedAt: new Date(),
+      lastError: reason.slice(0, 1000),
+    },
+  });
+
+  logger.warn({ betId: ref.bet.id, reason }, "resolve-bets: escalated to manual");
+}
