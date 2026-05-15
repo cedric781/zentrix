@@ -1,6 +1,7 @@
 "use client";
 
 import { useCreateBetState } from "./create-bet-context";
+import { ExternalEventPicker } from "./external-event-picker";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { TemplateAllowedSource } from "@/lib/api/types";
 
 const HOUR_PRESETS = [
   { value: 24, label: "24 hours" },
@@ -33,7 +35,15 @@ export function BetForm() {
     );
   }
 
+  const allowedSourcesRaw = state.template.allowedSources;
+  const allowedSources = Array.isArray(allowedSourcesRaw)
+    ? (allowedSourcesRaw as TemplateAllowedSource[])
+    : [];
+  const showPicker =
+    state.template.supportsAutoResolve === true && allowedSources.length > 0;
+
   return (
+    <div className="space-y-4">
     <Card>
       <CardContent className="pt-6 space-y-4">
         <div className="space-y-2">
@@ -141,5 +151,14 @@ export function BetForm() {
         </div>
       </CardContent>
     </Card>
+    {showPicker && (
+      <ExternalEventPicker
+        allowedSources={allowedSources}
+        category={state.template.category}
+        value={state.externalRef}
+        onChange={state.setExternalRef}
+      />
+    )}
+    </div>
   );
 }

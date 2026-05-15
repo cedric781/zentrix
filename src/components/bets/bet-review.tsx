@@ -13,6 +13,12 @@ function formatExpires(hours: number): string {
   return `${hours} hours`;
 }
 
+function formatIso(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
+}
+
 export function BetReview() {
   const state = useCreateBetState();
 
@@ -59,6 +65,19 @@ export function BetReview() {
         <div>
           <strong>Expires in:</strong> {formatExpires(state.expiresInHours)}
         </div>
+        {state.externalRef && (
+          <>
+            <div className="pt-2 border-t">
+              <strong>Linked event:</strong>{" "}
+              {state.externalRef.provider} / {state.externalRef.sport} /{" "}
+              {state.externalRef.league} / {state.externalRef.eventId}
+            </div>
+            <div>
+              <strong>Auto-resolves at:</strong>{" "}
+              {formatIso(state.externalRef.eventEndsAt)}
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

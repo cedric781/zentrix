@@ -70,3 +70,20 @@ export function isSupportedSport(s: string): s is SupportedSport {
 }
 
 export type CircuitBreakerState = "CLOSED" | "OPEN" | "HALF_OPEN";
+
+// ── P31: external event linking on create-bet ────────────────────
+
+export type CreateBetExternalRef = {
+  provider: "espn" | "thesportsdb";
+  eventId: string;
+  league: string;
+  sport: SupportedSport;
+  eventStartsAt: string; // ISO
+  eventEndsAt: string;   // ISO
+};
+
+export type TemplateAllowedSource = {
+  name: string;
+  providerId: "espn" | "thesportsdb";
+  type: string;
+};

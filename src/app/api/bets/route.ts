@@ -25,6 +25,24 @@ const Body = z.object({
   title: z.string().min(1).max(200),
   outcomeA: z.string().min(1).max(100),
   outcomeB: z.string().min(1).max(100),
+  externalRef: z
+    .object({
+      provider: z.enum(["espn", "thesportsdb"]),
+      eventId: z.string().min(1).max(200),
+      league: z.string().min(1).max(100),
+      sport: z.enum([
+        "football",
+        "basketball",
+        "american_football",
+        "ice_hockey",
+        "baseball",
+        "tennis",
+        "mma",
+      ]),
+      eventStartsAt: z.string().datetime(),
+      eventEndsAt: z.string().datetime(),
+    })
+    .optional(),
 });
 
 export async function POST(req: Request) {
@@ -66,6 +84,13 @@ export async function POST(req: Request) {
       outcomeA: parsed.data.outcomeA,
       outcomeB: parsed.data.outcomeB,
       idempotencyKey,
+      externalRef: parsed.data.externalRef
+        ? {
+            ...parsed.data.externalRef,
+            eventStartsAt: new Date(parsed.data.externalRef.eventStartsAt),
+            eventEndsAt: new Date(parsed.data.externalRef.eventEndsAt),
+          }
+        : undefined,
     });
 
     return NextResponse.json(

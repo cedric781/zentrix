@@ -6,7 +6,7 @@
  */
 
 import { apiFetch } from "./client";
-import type { BetSerialized, Paginated } from "./types";
+import type { BetSerialized, CreateBetExternalRef, Paginated } from "./types";
 
 /** All status values from prisma/schema.prisma `enum BetStatus`. */
 export type BetStatus =
@@ -127,6 +127,7 @@ export type CreateBetInput = {
   outcomeB: string;
   poolId?: string;
   matchId?: string;
+  externalRef?: CreateBetExternalRef;
 };
 
 export type CreateBetResponse = {
