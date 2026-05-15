@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownToLine, Copy, Wallet } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Copy, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { usePrivy } from "@privy-io/react-auth";
 
@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatUsdc } from "@/lib/money/units";
 import { useBalance } from "@/hooks/use-balance";
 import { DepositModal } from "./deposit-modal";
+import { WithdrawModal } from "./withdraw-modal";
 
 const BRAND_BLUE = "#2563EB";
 
@@ -31,6 +32,7 @@ export function WalletBalanceCard() {
   const { user } = usePrivy();
   const { data, isLoading, error, refetch, isRefetching } = useBalance();
   const [depositOpen, setDepositOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   const walletAddress = user?.wallet?.address ?? null;
 
@@ -110,10 +112,21 @@ export function WalletBalanceCard() {
             <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
             Deposit
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setWithdrawOpen(true)}
+          >
+            <ArrowUpFromLine className="h-4 w-4" aria-hidden="true" />
+            Withdraw
+          </Button>
         </div>
       </CardContent>
     </Card>
     <DepositModal open={depositOpen} onOpenChange={setDepositOpen} />
+    <WithdrawModal open={withdrawOpen} onOpenChange={setWithdrawOpen} />
     </>
   );
 }
