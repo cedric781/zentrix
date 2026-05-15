@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useCreateBetState } from "./create-bet-context";
+import { useState } from "react";
 import type {
+  CreateBetExternalRef,
   SupportedSport,
   TemplateAllowedSource,
 } from "@/lib/api/types";
@@ -25,6 +25,13 @@ import {
 
 type Provider = "espn" | "thesportsdb";
 
+type Props = {
+  allowedSources: TemplateAllowedSource[];
+  category: string;
+  value: CreateBetExternalRef | null;
+  onChange: (ref: CreateBetExternalRef | null) => void;
+};
+
 const SPORT_LABELS: Record<SupportedSport, string> = {
   football: "Football",
   basketball: "Basketball",
@@ -35,24 +42,51 @@ const SPORT_LABELS: Record<SupportedSport, string> = {
   mma: "MMA",
 };
 
-// datetime-local emits "YYYY-MM-DDTHH:MM" (no seconds, no tz). Treated as
-// local time, converted to UTC ISO. Empty input → empty string so callers
-// always see a defined string and can distinguish "untouched" from "partial".
-function toIso(local: string): string {
-  if (!local) return "";
-  const d = new Date(local);
-  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+const SPORTS_FOR_CATEGORY: Record<string, SupportedSport[]> = {
+  Sport: [
+    "football",
+    "basketball",
+    "american_football",
+    "ice_hockey",
+    "baseball",
+    "tennis",
+  ],
+  Combat: ["mma"],
+};
+
+const LEAGUES_FOR_SPORT: Record<SupportedSport, string[]> = {
+  football: [
+    "Premier League",
+    "La Liga",
+    "Bundesliga",
+    "Serie A",
+    "Ligue 1",
+    "Eredivisie",
+    "Champions League",
+  ],
+  basketball: ["NBA", "EuroLeague"],
+  american_football: ["NFL"],
+  ice_hockey: ["NHL"],
+  baseball: ["MLB"],
+  tennis: ["ATP", "WTA"],
+  mma: ["UFC", "Bellator"],
+};
+
+function isoToDatetimeLocal(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function ExternalEventPicker() {
-  const { template, setExternalRef } = useCreateBetState();
-
-  const allowedSources = useMemo<TemplateAllowedSource[]>(() => {
-    const raw = template?.allowedSources;
-    return Array.isArray(raw) ? (raw as TemplateAllowedSource[]) : [];
-  }, [template?.allowedSources]);
-
-  const providers = useMemo<Provider[]>(() => {
+export function ExternalEventPicker({
+  allowedSources,
+  category,
+  value,
+  onChange,
+}: Props) {
+  const providers = ((): Provider[] => {
     const seen = new Set<Provider>();
     for (const src of allowedSources) {
       if (src.providerId === "espn" || src.providerId === "thesportsdb") {
@@ -60,44 +94,105 @@ export function ExternalEventPicker() {
       }
     }
     return seen.size > 0 ? Array.from(seen) : ["espn", "thesportsdb"];
-  }, [allowedSources]);
+  })();
 
-  const [provider, setProvider] = useState<Provider>(providers[0] ?? "espn");
-  const [eventId, setEventId] = useState("");
-  const [league, setLeague] = useState("");
-  const [sport, setSport] = useState<SupportedSport>("football");
-  const [eventStartsAt, setEventStartsAt] = useState("");
-  const [eventEndsAt, setEventEndsAt] = useState("");
+  const sportOptions: SupportedSport[] =
+    SPORTS_FOR_CATEGORY[category] ?? [...SUPPORTED_SPORTS];
 
-  useEffect(() => {
+  const [provider, setProvider] = useState<Provider>(
+    value?.provider ?? providers[0] ?? "espn",
+  );
+  const [sport, setSport] = useState<SupportedSport>(
+    value?.sport ?? sportOptions[0] ?? "football",
+  );
+  const [league, setLeague] = useState(value?.league ?? "");
+  const [eventId, setEventId] = useState(value?.eventId ?? "");
+  const [startsLocal, setStartsLocal] = useState(
+    isoToDatetimeLocal(value?.eventStartsAt),
+  );
+  const [endsLocal, setEndsLocal] = useState(
+    isoToDatetimeLocal(value?.eventEndsAt),
+  );
+
+  const leagues = LEAGUES_FOR_SPORT[sport] ?? [];
+
+  function emit(next: {
+    provider: Provider;
+    sport: SupportedSport;
+    league: string;
+    eventId: string;
+    startsLocal: string;
+    endsLocal: string;
+  }) {
     if (
-      provider &&
-      eventId &&
-      league &&
-      sport &&
-      eventStartsAt &&
-      eventEndsAt
+      !next.provider ||
+      !next.sport ||
+      !next.league ||
+      !next.eventId ||
+      !next.startsLocal ||
+      !next.endsLocal
     ) {
-      setExternalRef({
-        provider,
-        eventId,
-        league,
-        sport,
-        eventStartsAt,
-        eventEndsAt,
-      });
-    } else {
-      setExternalRef(null);
+      onChange(null);
+      return;
     }
-  }, [
-    provider,
-    eventId,
-    league,
-    sport,
-    eventStartsAt,
-    eventEndsAt,
-    setExternalRef,
-  ]);
+    const startsDate = new Date(next.startsLocal);
+    const endsDate = new Date(next.endsLocal);
+    if (
+      Number.isNaN(startsDate.getTime()) ||
+      Number.isNaN(endsDate.getTime())
+    ) {
+      onChange(null);
+      return;
+    }
+    onChange({
+      provider: next.provider,
+      sport: next.sport,
+      league: next.league,
+      eventId: next.eventId,
+      eventStartsAt: startsDate.toISOString(),
+      eventEndsAt: endsDate.toISOString(),
+    });
+  }
+
+  const onProvider = (p: Provider) => {
+    setProvider(p);
+    emit({ provider: p, sport, league, eventId, startsLocal, endsLocal });
+  };
+
+  const onSport = (s: SupportedSport) => {
+    const nextLeagues = LEAGUES_FOR_SPORT[s] ?? [];
+    const nextLeague = nextLeagues.includes(league) ? league : "";
+    setSport(s);
+    setLeague(nextLeague);
+    emit({
+      provider,
+      sport: s,
+      league: nextLeague,
+      eventId,
+      startsLocal,
+      endsLocal,
+    });
+  };
+
+  const onLeague = (l: string) => {
+    setLeague(l);
+    emit({ provider, sport, league: l, eventId, startsLocal, endsLocal });
+  };
+
+  const onEventId = (v: string) => {
+    setEventId(v);
+    emit({ provider, sport, league, eventId: v, startsLocal, endsLocal });
+  };
+
+  const onStarts = (v: string) => {
+    setStartsLocal(v);
+    emit({ provider, sport, league, eventId, startsLocal: v, endsLocal });
+  };
+
+  const onEnds = (v: string) => {
+    setEndsLocal(v);
+    emit({ provider, sport, league, eventId, startsLocal, endsLocal: v });
+  };
 
   return (
     <Card>
@@ -113,7 +208,7 @@ export function ExternalEventPicker() {
             <Label htmlFor="ref-provider">Provider</Label>
             <Select
               value={provider}
-              onValueChange={(v) => setProvider(v as Provider)}
+              onValueChange={(v) => onProvider(v as Provider)}
             >
               <SelectTrigger id="ref-provider">
                 <SelectValue />
@@ -132,13 +227,13 @@ export function ExternalEventPicker() {
             <Label htmlFor="ref-sport">Sport</Label>
             <Select
               value={sport}
-              onValueChange={(v) => setSport(v as SupportedSport)}
+              onValueChange={(v) => onSport(v as SupportedSport)}
             >
               <SelectTrigger id="ref-sport">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {SUPPORTED_SPORTS.map((s) => (
+                {sportOptions.map((s) => (
                   <SelectItem key={s} value={s}>
                     {SPORT_LABELS[s]}
                   </SelectItem>
@@ -150,13 +245,18 @@ export function ExternalEventPicker() {
 
         <div className="space-y-2">
           <Label htmlFor="ref-league">League</Label>
-          <Input
-            id="ref-league"
-            value={league}
-            onChange={(e) => setLeague(e.target.value)}
-            placeholder="e.g. La Liga"
-            maxLength={100}
-          />
+          <Select value={league} onValueChange={onLeague}>
+            <SelectTrigger id="ref-league">
+              <SelectValue placeholder="Select a league" />
+            </SelectTrigger>
+            <SelectContent>
+              {leagues.map((l) => (
+                <SelectItem key={l} value={l}>
+                  {l}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-2">
@@ -164,7 +264,7 @@ export function ExternalEventPicker() {
           <Input
             id="ref-event-id"
             value={eventId}
-            onChange={(e) => setEventId(e.target.value)}
+            onChange={(e) => onEventId(e.target.value)}
             placeholder="Provider event ID (e.g. 401234567)"
             maxLength={200}
           />
@@ -176,7 +276,8 @@ export function ExternalEventPicker() {
             <Input
               id="ref-starts"
               type="datetime-local"
-              onChange={(e) => setEventStartsAt(toIso(e.target.value))}
+              value={startsLocal}
+              onChange={(e) => onStarts(e.target.value)}
             />
           </div>
           <div className="space-y-2">
@@ -184,7 +285,8 @@ export function ExternalEventPicker() {
             <Input
               id="ref-ends"
               type="datetime-local"
-              onChange={(e) => setEventEndsAt(toIso(e.target.value))}
+              value={endsLocal}
+              onChange={(e) => onEnds(e.target.value)}
             />
           </div>
         </div>

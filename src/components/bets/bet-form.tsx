@@ -151,7 +151,14 @@ export function BetForm() {
         </div>
       </CardContent>
     </Card>
-    {showPicker && <ExternalEventPicker />}
+    {showPicker && (
+      <ExternalEventPicker
+        allowedSources={allowedSources}
+        category={state.template.category}
+        value={state.externalRef}
+        onChange={state.setExternalRef}
+      />
+    )}
     </div>
   );
 }
