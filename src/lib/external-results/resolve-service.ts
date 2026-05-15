@@ -1,4 +1,7 @@
 import "server-only";
+// TODO(P30 prompt 6): integration smoke test on real Neon — covers TX rollback,
+// version-conflict races, and the multi-step commit flows. Unit-level mocks
+// for $transaction are fragile, so prompt 5 ships without them.
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
