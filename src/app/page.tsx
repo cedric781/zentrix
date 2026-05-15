@@ -26,14 +26,11 @@ export default function LandingPage() {
 
       {/* ═══ HERO ═══ */}
       <div className="relative w-full overflow-hidden aspect-[16/9] sm:aspect-[2/1] lg:aspect-[5/2]">
-        {/* Hero placeholder — swap to <img src="/images/zentrix-hero.png" /> when asset lands. */}
-        <div
-          aria-hidden
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse at 30% 40%, #1d4ed8 0%, #0b0b0b 55%), linear-gradient(135deg, #1e293b 0%, #0b0b0b 100%)",
-          }}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/images/zentrix-hero.png"
+          alt="Friends reacting to a bet"
+          className="absolute inset-0 w-full h-full object-cover object-center"
         />
 
         <div
@@ -181,21 +178,13 @@ export default function LandingPage() {
       {/* ═══ SOCIAL IMAGE ═══ */}
       <section className="py-12 md:py-16">
         <div className="max-w-5xl mx-auto px-4">
-          <div className="relative w-full overflow-hidden rounded-2xl bg-neutral-900 aspect-[16/9]">
-            {/* Social placeholder — swap to <img src="/images/zentrix-social.jpg" /> when asset lands. */}
-            <div
-              aria-hidden
-              className="absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(ellipse at 70% 30%, #2563EB55 0%, transparent 60%), linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0b0b0b 100%)",
-              }}
+          <div className="relative w-full overflow-hidden rounded-2xl bg-neutral-900">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/zentrix-social.jpg"
+              alt="Two phones placing a bet in a stadium"
+              className="w-full h-auto object-contain"
             />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/40 font-mono">
-                Social image placeholder
-              </p>
-            </div>
           </div>
         </div>
       </section>
