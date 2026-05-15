@@ -53,13 +53,20 @@ export type ApiErrorBody = {
 
 export type SupportedProvider = "espn" | "thesportsdb" | "football-data";
 
-export type SupportedSport =
-  | "football"
-  | "basketball"
-  | "american_football"
-  | "ice_hockey"
-  | "baseball"
-  | "tennis"
-  | "mma";
+export const SUPPORTED_SPORTS = [
+  "football",
+  "basketball",
+  "american_football",
+  "ice_hockey",
+  "baseball",
+  "tennis",
+  "mma",
+] as const;
+
+export type SupportedSport = (typeof SUPPORTED_SPORTS)[number];
+
+export function isSupportedSport(s: string): s is SupportedSport {
+  return (SUPPORTED_SPORTS as readonly string[]).includes(s);
+}
 
 export type CircuitBreakerState = "CLOSED" | "OPEN" | "HALF_OPEN";
