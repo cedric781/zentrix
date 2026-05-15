@@ -31,7 +31,17 @@ export function TemplateCard({ template, selected }: Props) {
     >
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base">{template.name}</CardTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            <CardTitle className="text-base">{template.name}</CardTitle>
+            {template.supportsAutoResolve && (
+              <Badge
+                variant="secondary"
+                className="shrink-0 text-xs font-normal text-muted-foreground"
+              >
+                Auto-resolves
+              </Badge>
+            )}
+          </div>
           <Badge variant="outline" className="shrink-0">
             {template.category}
           </Badge>
