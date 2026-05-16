@@ -37,16 +37,49 @@ export type FetchEventInput = {
 };
 
 /**
+ * P40: Event search input — caller wil events ophalen voor autocomplete
+ * picker. Sport is required (smalt zoekruimte + bepaalt provider mapping);
+ * league is optioneel extra filter.
+ */
+export type SearchEventsParams = {
+  query: string;
+  sport: SupportedSport;
+  league?: string;
+};
+
+/**
+ * P40: Compacte event-shape voor autocomplete results. Caller mapt dit
+ * naar CreateBetExternalRef bij selectie. `label` is een display string
+ * ("Lakers vs Celtics — NBA — 2026-05-20"). `endsAt` is optioneel — niet
+ * alle providers exposen een end-time.
+ */
+export type ExternalEventSummary = {
+  provider: "espn" | "thesportsdb";
+  providerEventId: string;
+  sport: SupportedSport;
+  league: string;
+  homeTeam: string;
+  awayTeam: string;
+  startsAt: string;
+  endsAt?: string;
+  label: string;
+};
+
+/**
  * Uniforme provider interface. Elke provider adapter implementeert dit.
  *
  * MUST:
  *   - timeout binnen 5 sec per fetch (anders cron-batch verloopt)
  *   - throw ProviderError op transport failures (NOT silent fallback)
  *   - return ExternalEventResult.not_found voor 404, NIET throwen
+ *
+ * P40: searchEvents is optional — niet elke provider hoeft autocomplete
+ * te ondersteunen (bv. een toekomstige odds-only provider).
  */
 export interface ExternalResultProvider {
   readonly name: SupportedProvider;
   fetchEvent(input: FetchEventInput): Promise<ExternalEventResult>;
+  searchEvents?(params: SearchEventsParams): Promise<ExternalEventSummary[]>;
 }
 
 /**

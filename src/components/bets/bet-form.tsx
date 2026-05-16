@@ -2,6 +2,7 @@
 
 import { useCreateBetState } from "./create-bet-context";
 import { ExternalEventPicker } from "./external-event-picker";
+import { EventSearchPicker } from "./event-search-picker";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,6 +42,10 @@ export function BetForm() {
     : [];
   const showPicker =
     state.template.supportsAutoResolve === true && allowedSources.length > 0;
+  // EventSearchPicker covers Sport+Combat via ESPN/TheSportsDB. Other
+  // auto-resolve categories (Esports/Games) fall back to the manual picker.
+  const category = state.template.category;
+  const useAutocompletePicker = category === "Sport" || category === "Combat";
 
   return (
     <div className="space-y-4">
@@ -151,10 +156,17 @@ export function BetForm() {
         </div>
       </CardContent>
     </Card>
-    {showPicker && (
+    {showPicker && useAutocompletePicker && (
+      <EventSearchPicker
+        category={category}
+        value={state.externalRef}
+        onChange={state.setExternalRef}
+      />
+    )}
+    {showPicker && !useAutocompletePicker && (
       <ExternalEventPicker
         allowedSources={allowedSources}
-        category={state.template.category}
+        category={category}
         value={state.externalRef}
         onChange={state.setExternalRef}
       />
