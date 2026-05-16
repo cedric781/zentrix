@@ -15,6 +15,7 @@ import { safeHashCompare } from "@/lib/crypto/safe-compare";
 import { settleBet } from "./settlement";
 import { trackReputationEvent } from "@/lib/reputation/service";
 import { isSupportedSport } from "@/lib/api/types";
+import { logger } from "@/lib/logger";
 
 export { expireOpenBet, autoVoidProposedBet } from "./expire";
 
@@ -40,6 +41,11 @@ export interface CreateBetInput {
     eventStartsAt: Date;
     eventEndsAt: Date;
   };
+  // P34: Template tracking. All optional for backward compat with pre-P34
+  // callers (legacy bets stay templateId=null, category=null, isCustom=false).
+  templateId?: string;
+  category?: string;
+  isCustom?: boolean;
 }
 
 export interface CreateBetResult {
@@ -182,6 +188,21 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
     );
   }
 
+  // P34: Template tracking input integrity.
+  if (input.templateId && input.isCustom) {
+    throw new BetError(
+      "BET_INVALID_INPUT",
+      "Cannot set both templateId and isCustom=true",
+      400,
+    );
+  }
+  if (!input.templateId && !input.isCustom && !input.category) {
+    logger.warn(
+      { userId: creatorId },
+      "createBet: no templateId, category, or isCustom flag",
+    );
+  }
+
   // 2. Generate ids + token before tx.
   const betId = crypto.randomUUID();
   const inviteToken = crypto.randomBytes(32).toString("hex");
@@ -278,6 +299,9 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
           title,
           outcomeA,
           outcomeB,
+          templateId: input.templateId ?? null,
+          category: input.category ?? null,
+          isCustom: input.isCustom ?? false,
         },
       });
     } catch (e) {
