@@ -1,17 +1,28 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useCreateBetState } from "@/components/bets/create-bet-context";
+import { useCreateBetStateOptional } from "@/components/bets/create-bet-context";
 import type { BetTemplateSerialized } from "@/lib/api/types";
 
 type Props = {
   template: BetTemplateSerialized;
   selected: boolean;
+  navigateOnClick?: boolean;
 };
 
-export function TemplateCard({ template, selected }: Props) {
-  const { setTemplate } = useCreateBetState();
+export function TemplateCard({ template, selected, navigateOnClick }: Props) {
+  const router = useRouter();
+  const ctx = useCreateBetStateOptional();
+
+  const handleActivate = () => {
+    if (navigateOnClick) {
+      router.push(`/bets/new?template=${encodeURIComponent(template.slug)}`);
+      return;
+    }
+    ctx?.setTemplate(template);
+  };
 
   return (
     <Card
@@ -21,11 +32,11 @@ export function TemplateCard({ template, selected }: Props) {
       className={`cursor-pointer transition-all hover:shadow-md ${
         selected ? "ring-2 ring-primary" : ""
       }`}
-      onClick={() => setTemplate(template)}
+      onClick={handleActivate}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          setTemplate(template);
+          handleActivate();
         }
       }}
     >
