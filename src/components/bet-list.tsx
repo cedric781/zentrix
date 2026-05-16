@@ -1,26 +1,36 @@
 "use client";
 
 /**
- * BetList — infinite list of caller's bets with status filter.
+ * BetList — marketplace + my-bets infinite list.
  *
- * Notes:
- *   - GET /api/bets is auth-required and pre-filtered to current user server-side.
- *     No "all bets" view exists yet.
- *   - Pagination shape: { items, nextCursor }. hasMore = nextCursor !== null.
- *   - "Load more" button (accessible) instead of infinite scroll.
+ * Tabs:
+ *   - Explore (scope=all): public marketplace, defaults to OPEN+ACTIVE
+ *     unless status filter is supplied.
+ *   - My Bets (scope=mine): caller's own bets (createdBy OR opponent).
+ *
+ * Filters apply to the active tab. Pagination is cursor-based; backend
+ * caps page size, see parseListQuery.
  */
 
 import { useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { usePrivy } from "@privy-io/react-auth";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BetCard } from "@/components/bet-card";
-import { listBets } from "@/lib/api/bets";
+import { useBets } from "@/hooks/use-bets";
 import type { BetStatus } from "@/lib/api/bets";
 
+type Scope = "all" | "mine";
 type StatusFilter = BetStatus | "ALL";
+type CategoryFilter = "ALL" | "Sport" | "Combat" | "Esports" | "Games";
 
 const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "ALL" },
@@ -29,34 +39,57 @@ const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: "Settled", value: "SETTLED" },
 ];
 
+const CATEGORY_OPTIONS: { label: string; value: CategoryFilter }[] = [
+  { label: "All categories", value: "ALL" },
+  { label: "Sport", value: "Sport" },
+  { label: "Combat", value: "Combat" },
+  { label: "Esports", value: "Esports" },
+  { label: "Games", value: "Games" },
+];
+
 export function BetList() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
-  const { getAccessToken } = usePrivy();
+  const [tab, setTab] = useState<Scope>("all");
+  const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [category, setCategory] = useState<CategoryFilter>("ALL");
 
-  const status = statusFilter === "ALL" ? undefined : statusFilter;
-
-  const query = useInfiniteQuery({
-    queryKey: ["bets", { status }],
-    initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam, signal }) => {
-      const token = await getAccessToken();
-      return listBets(
-        { cursor: pageParam, status, take: 20 },
-        { token: token ?? undefined, signal },
-      );
-    },
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  const query = useBets({
+    scope: tab,
+    status: status === "ALL" ? undefined : status,
+    category: category === "ALL" ? undefined : category,
   });
 
   return (
     <div className="space-y-6">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Scope)}>
+        <TabsList>
+          <TabsTrigger value="all">Explore</TabsTrigger>
+          <TabsTrigger value="mine">My Bets</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={category}
+          onValueChange={(v) => setCategory(v as CategoryFilter)}
+        >
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATEGORY_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         {STATUS_OPTIONS.map((opt) => (
           <Button
             key={opt.value}
             size="sm"
-            variant={statusFilter === opt.value ? "default" : "outline"}
-            onClick={() => setStatusFilter(opt.value)}
+            variant={status === opt.value ? "default" : "outline"}
+            onClick={() => setStatus(opt.value)}
           >
             {opt.label}
           </Button>
@@ -69,8 +102,16 @@ export function BetList() {
         <Alert variant="destructive">
           <AlertTitle>Couldn&apos;t load bets</AlertTitle>
           <AlertDescription className="flex items-center justify-between gap-4">
-            <span>{query.error instanceof Error ? query.error.message : "Unknown error"}</span>
-            <Button size="sm" variant="outline" onClick={() => query.refetch()}>
+            <span>
+              {query.error instanceof Error
+                ? query.error.message
+                : "Unknown error"}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => query.refetch()}
+            >
               Retry
             </Button>
           </AlertDescription>
@@ -80,9 +121,16 @@ export function BetList() {
       {query.data && (
         <>
           {query.data.pages.every((p) => p.items.length === 0) ? (
-            <div className="rounded-lg border border-dashed py-16 text-center">
-              <p className="text-sm text-muted-foreground">
-                No bets yet. Bets you create or accept will appear here.
+            <div className="space-y-2 rounded-lg border border-dashed py-16 text-center">
+              <p className="text-sm font-medium">
+                {tab === "all"
+                  ? "No bets match your filters"
+                  : "No bets yet"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {tab === "all"
+                  ? "Try a different category or status."
+                  : "Bets you create or accept will appear here."}
               </p>
             </div>
           ) : (
@@ -100,7 +148,7 @@ export function BetList() {
                 onClick={() => query.fetchNextPage()}
                 disabled={query.isFetchingNextPage}
               >
-                {query.isFetchingNextPage ? "Loading\u2026" : "Load more"}
+                {query.isFetchingNextPage ? "Loading…" : "Load more"}
               </Button>
             </div>
           )}
