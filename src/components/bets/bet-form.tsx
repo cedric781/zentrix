@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { TemplateAllowedSource } from "@/lib/api/types";
+import type { ExternalEventSummary } from "@/lib/api/external-results";
 
 const HOUR_PRESETS = [
   { value: 24, label: "24 hours" },
@@ -22,6 +23,11 @@ const HOUR_PRESETS = [
   { value: 72, label: "3 days" },
   { value: 168, label: "1 week" },
 ] as const;
+
+const EXPIRY_PRESET_VALUES = HOUR_PRESETS.map((p) => p.value);
+const DEFAULT_EXPIRY_HOURS = HOUR_PRESETS[0].value;
+const EXPIRY_BUFFER_HOURS = 1;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 export function BetForm() {
   const state = useCreateBetState();
@@ -46,6 +52,35 @@ export function BetForm() {
   // auto-resolve categories (Esports/Games) fall back to the manual picker.
   const category = state.template.category;
   const useAutocompletePicker = category === "Sport" || category === "Combat";
+  // Title is pre-filled with template.name when a template is picked; treat
+  // that as "still at default" for the auto-fill empty-check.
+  const templateName = state.template.name;
+
+  const handleAutofill = (event: ExternalEventSummary) => {
+    if (!state.title || state.title === templateName) {
+      state.setTitle(`${event.homeTeam} vs ${event.awayTeam}`);
+    }
+    if (!state.outcomeA) {
+      state.setOutcomeA(`${event.homeTeam} wins`);
+    }
+    if (!state.outcomeB) {
+      state.setOutcomeB(`${event.awayTeam} wins`);
+    }
+    if (state.expiresInHours === DEFAULT_EXPIRY_HOURS) {
+      const eventStartsMs = new Date(event.startsAt).getTime();
+      if (!Number.isNaN(eventStartsMs)) {
+        const hoursUntil =
+          Math.ceil((eventStartsMs - Date.now()) / MS_PER_HOUR) +
+          EXPIRY_BUFFER_HOURS;
+        if (hoursUntil > DEFAULT_EXPIRY_HOURS) {
+          const snapped =
+            EXPIRY_PRESET_VALUES.find((p) => p >= hoursUntil) ??
+            EXPIRY_PRESET_VALUES[EXPIRY_PRESET_VALUES.length - 1];
+          state.setExpiresInHours(snapped);
+        }
+      }
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -54,6 +89,7 @@ export function BetForm() {
         category={category}
         value={state.externalRef}
         onChange={state.setExternalRef}
+        onSelectEvent={handleAutofill}
       />
     )}
     {showPicker && !useAutocompletePicker && (

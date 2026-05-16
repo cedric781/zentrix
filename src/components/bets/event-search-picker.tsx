@@ -70,9 +70,20 @@ type Props = {
   category: string;
   value: CreateBetExternalRef | null;
   onChange: (ref: CreateBetExternalRef | null) => void;
+  /**
+   * Optional hook called with the full event summary (home/away/etc) when
+   * the user picks a result. Lets callers auto-fill adjacent form fields
+   * — `onChange` only carries the backend-required shape.
+   */
+  onSelectEvent?: (event: ExternalEventSummary) => void;
 };
 
-export function EventSearchPicker({ category, value, onChange }: Props) {
+export function EventSearchPicker({
+  category,
+  value,
+  onChange,
+  onSelectEvent,
+}: Props) {
   const sportOptions = useMemo(
     () => SPORTS_FOR_CATEGORY[category] ?? [],
     [category],
@@ -98,6 +109,7 @@ export function EventSearchPicker({ category, value, onChange }: Props) {
       eventStartsAt: starts.toISOString(),
       eventEndsAt: ends.toISOString(),
     });
+    onSelectEvent?.(event);
     setQuery("");
   };
 
