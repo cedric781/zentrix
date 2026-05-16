@@ -49,6 +49,21 @@ export function BetForm() {
 
   return (
     <div className="space-y-4">
+    {showPicker && useAutocompletePicker && (
+      <EventSearchPicker
+        category={category}
+        value={state.externalRef}
+        onChange={state.setExternalRef}
+      />
+    )}
+    {showPicker && !useAutocompletePicker && (
+      <ExternalEventPicker
+        allowedSources={allowedSources}
+        category={category}
+        value={state.externalRef}
+        onChange={state.setExternalRef}
+      />
+    )}
     <Card>
       <CardContent className="pt-6 space-y-4">
         <div className="space-y-2">
@@ -156,21 +171,6 @@ export function BetForm() {
         </div>
       </CardContent>
     </Card>
-    {showPicker && useAutocompletePicker && (
-      <EventSearchPicker
-        category={category}
-        value={state.externalRef}
-        onChange={state.setExternalRef}
-      />
-    )}
-    {showPicker && !useAutocompletePicker && (
-      <ExternalEventPicker
-        allowedSources={allowedSources}
-        category={category}
-        value={state.externalRef}
-        onChange={state.setExternalRef}
-      />
-    )}
     </div>
   );
 }
