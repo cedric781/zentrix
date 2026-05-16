@@ -8,6 +8,7 @@
  */
 
 import Link from "next/link";
+import { Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BetSerialized } from "@/lib/api/types";
@@ -75,14 +76,29 @@ export function BetCard({ bet }: { bet: BetSerialized }) {
           <CardTitle className="text-base font-medium">
             {bet.creatorSide} <span className="text-muted-foreground">vs</span> {bet.acceptorSide}
           </CardTitle>
-          <Badge variant={statusVariant(bet.status as BetStatus)}>{bet.status}</Badge>
+          <div className="flex items-center gap-1">
+            {bet.category && (
+              <Badge variant="outline" className="text-[10px] font-mono">
+                {bet.category}
+              </Badge>
+            )}
+            <Badge variant={statusVariant(bet.status as BetStatus)}>{bet.status}</Badge>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">${formatStake(bet.stakeUnits)}</div>
           <div className="text-xs text-muted-foreground">USDC stake</div>
         </CardContent>
-        <CardFooter className="text-xs text-muted-foreground">
-          {formatExpiry(bet.expiresAt)}
+        <CardFooter className="flex items-center justify-between text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatExpiry(bet.expiresAt)}
+          </span>
+          {bet.isCustom && (
+            <Badge variant="secondary" className="text-[9px]">
+              Custom
+            </Badge>
+          )}
         </CardFooter>
       </Card>
     </Link>
