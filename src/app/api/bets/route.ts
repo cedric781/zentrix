@@ -43,6 +43,9 @@ const Body = z.object({
       eventEndsAt: z.string().datetime(),
     })
     .optional(),
+  templateId: z.string().uuid().optional(),
+  category: z.string().min(1).max(50).optional(),
+  isCustom: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -91,6 +94,9 @@ export async function POST(req: Request) {
             eventEndsAt: new Date(parsed.data.externalRef.eventEndsAt),
           }
         : undefined,
+      templateId: parsed.data.templateId,
+      category: parsed.data.category,
+      isCustom: parsed.data.isCustom,
     });
 
     return NextResponse.json(
