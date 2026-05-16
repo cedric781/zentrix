@@ -128,6 +128,10 @@ export type CreateBetInput = {
   poolId?: string;
   matchId?: string;
   externalRef?: CreateBetExternalRef;
+  // P35: template tracking
+  templateId?: string;
+  category?: string;
+  isCustom?: boolean;
 };
 
 export type CreateBetResponse = {

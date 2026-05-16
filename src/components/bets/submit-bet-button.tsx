@@ -42,6 +42,9 @@ export function SubmitBetButton() {
         stakeUnits: stakeMicroUnits,
         expiresInHours: state.expiresInHours,
         externalRef: state.externalRef ?? undefined,
+        templateId: state.template?.id,
+        category: state.template?.category,
+        isCustom: false,
       },
       {
         onSuccess: (data) => {
