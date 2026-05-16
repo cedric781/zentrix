@@ -4,11 +4,16 @@ import { prisma } from "@/lib/prisma";
 import { encodeCursor, decodeCursor } from "@/lib/http/pagination";
 
 export interface ListBetsInput {
-  userId: string;
+  scope: "mine" | "all";
+  userId?: string;
   status?: BetStatus;
+  category?: string;
   cursor?: string;
   take?: number;
 }
+
+// Public marketplace default: bets users can interact with right now.
+const PUBLIC_DEFAULT_STATUSES: BetStatus[] = ["OPEN", "ACTIVE"];
 
 export interface ListBetsAdminInput {
   status?: BetStatus;
@@ -36,15 +41,26 @@ const TAKE_ADMIN_DEFAULT = 25;
 const TAKE_ADMIN_MAX = 100;
 
 export async function listBets(input: ListBetsInput): Promise<CursorPage<Bet>> {
+  if (input.scope === "mine" && !input.userId) {
+    throw new Error("listBets: userId required for scope=mine");
+  }
+
   const take = Math.min(input.take ?? TAKE_USER_DEFAULT, TAKE_USER_MAX);
   const cursor = input.cursor ? decodeCursor(input.cursor) : null;
 
   const where: Prisma.BetWhereInput = {
-    OR: [
-      { createdById: input.userId },
-      { opponentUserId: input.userId },
-    ],
+    ...(input.scope === "mine" && {
+      OR: [
+        { createdById: input.userId! },
+        { opponentUserId: input.userId! },
+      ],
+    }),
+    // Public scope defaults to OPEN+ACTIVE; explicit status param overrides.
+    ...(input.scope === "all" && !input.status && {
+      status: { in: PUBLIC_DEFAULT_STATUSES },
+    }),
     ...(input.status && { status: input.status }),
+    ...(input.category && { category: input.category }),
   };
 
   const fetched = await prisma.bet.findMany({

@@ -125,6 +125,7 @@ export async function GET(req: Request) {
     }
     const { status, cursor, take } = parsed.data;
     const result = await listBets({
+      scope: "mine",
       userId: user.id,
       status: status as BetStatus | undefined,
       cursor,
