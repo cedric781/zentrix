@@ -16,6 +16,9 @@ const BetStatusEnum = z.enum(
   Object.values(BetStatus) as [string, ...string[]],
 );
 
+const ScopeEnum = z.enum(["mine", "all"]).default("mine");
+const CategorySchema = z.string().min(1).max(50);
+
 const Body = z.object({
   side: z.enum(["A", "B"]),
   stakeUnits: z.string().regex(/^\d+$/, "stakeUnits must be a decimal string"),
@@ -123,11 +126,38 @@ export async function GET(req: Request) {
         { status: 400 },
       );
     }
+
+    const url = new URL(req.url);
+    const scopeResult = ScopeEnum.safeParse(
+      url.searchParams.get("scope") ?? undefined,
+    );
+    if (!scopeResult.success) {
+      return NextResponse.json(
+        { error: "bad_query", issues: scopeResult.error.issues },
+        { status: 400 },
+      );
+    }
+    const scope = scopeResult.data;
+
+    const rawCategory = url.searchParams.get("category");
+    let category: string | undefined;
+    if (rawCategory !== null) {
+      const categoryResult = CategorySchema.safeParse(rawCategory);
+      if (!categoryResult.success) {
+        return NextResponse.json(
+          { error: "bad_query", issues: categoryResult.error.issues },
+          { status: 400 },
+        );
+      }
+      category = categoryResult.data;
+    }
+
     const { status, cursor, take } = parsed.data;
     const result = await listBets({
-      scope: "mine",
-      userId: user.id,
+      scope,
+      userId: scope === "mine" ? user.id : undefined,
       status: status as BetStatus | undefined,
+      category,
       cursor,
       take,
     });
