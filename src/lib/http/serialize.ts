@@ -36,6 +36,9 @@ export function serializeBet(bet: Bet) {
     settledAt: bet.settledAt?.toISOString() ?? null,
     cancelledAt: bet.cancelledAt?.toISOString() ?? null,
     voidedAt: bet.voidedAt?.toISOString() ?? null,
+    templateId: bet.templateId,
+    category: bet.category,
+    isCustom: bet.isCustom,
     createdAt: bet.createdAt.toISOString(),
     updatedAt: bet.updatedAt.toISOString(),
   };

@@ -370,6 +370,14 @@ model Bet {
 
   createdByLedgerTxId String? @map("created_by_ledger_tx_id")
 
+  // P34: Template tracking (Wager pattern). No FK relation to BetTemplate —
+  // BetTemplate is soft-deletable, so a hard FK would force cascade/restrict
+  // behaviour we don't want. category is denormalized for fast marketplace
+  // filtering without a join.
+  templateId String? @map("template_id")
+  category   String?
+  isCustom   Boolean @default(false) @map("is_custom")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -393,6 +401,9 @@ model Bet {
   @@index([poolId, status], map: "idx_bets_pool_status")
   @@index([matchId, status], map: "idx_bets_match_status")
   @@index([expiresAt], map: "idx_bets_expires_at")
+  @@index([status, createdAt(sort: Desc)], map: "idx_bets_status_created_at")
+  @@index([category, status, createdAt(sort: Desc)], map: "idx_bets_category_status_created_at")
+  @@index([templateId], map: "idx_bets_template_id")
   @@map("bets")
 }
 
