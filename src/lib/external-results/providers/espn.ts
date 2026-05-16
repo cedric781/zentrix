@@ -52,9 +52,12 @@ const LEAGUE_KEY_LABELS: Record<string, string> = {
 };
 
 const ESPN_USER_AGENT = "Zentrix/1.0";
+const SEARCH_URL = "https://site.api.espn.com/apis/search/v2";
 const SEARCH_TIMEOUT_MS = 8000;
 const SCOREBOARD_LOOKAHEAD_DAYS = 14;
 const SEARCH_RESULT_LIMIT = 10;
+const SEARCH_API_PER_QUERY_LIMIT = 8;
+const DEFAULT_DURATION_HOURS = 4;
 
 type EspnScoreboardListResponse = {
   events?: Array<{
@@ -68,6 +71,31 @@ type EspnScoreboardListResponse = {
       }>;
     }>;
   }>;
+};
+
+type EspnSearchContent = {
+  eventId: string;
+  displayName: string;
+  subtitle?: string;
+  date?: string;
+};
+
+type EspnSearchResponse = {
+  totalFound?: number;
+  results?: Array<{ type: string; contents?: EspnSearchContent[] }>;
+};
+
+// Sport filter: subtitle keywords that mean "wrong sport for this query".
+// ESPN's search API mixes sports; the regex below skips obvious mismatches.
+// Per-sport regex follows Wager pattern (port: negative filter on subtitle).
+const ESPN_WRONG_SPORT_PATTERNS: Record<SupportedSport, RegExp> = {
+  football: /\b(nba|nfl|mlb|nhl|wnba|tennis|mma|ufc)\b/i,
+  basketball: /\b(soccer|mlb|nhl|nfl|tennis|mma|ufc)\b/i,
+  american_football: /\b(nba|mlb|nhl|soccer|tennis|mma|ufc|wnba)\b/i,
+  ice_hockey: /\b(nba|nfl|mlb|soccer|tennis|mma|ufc|wnba)\b/i,
+  baseball: /\b(nba|nfl|nhl|soccer|tennis|mma|ufc|wnba)\b/i,
+  tennis: /\b(nba|nfl|mlb|nhl|soccer|mma|ufc|wnba)\b/i,
+  mma: /\b(nba|nfl|mlb|nhl|soccer|tennis|wnba)\b/i,
 };
 
 /**
@@ -116,34 +144,155 @@ export class EspnProvider implements ExternalResultProvider {
   }
 
   /**
-   * P40 autocomplete. ESPN has no proper search endpoint, so we:
-   *   1. Scan scoreboard for every league mapped to `sport` over a 14-day window
-   *   2. Client-side filter on team-name substring (case-insensitive)
-   *   3. Run all league scans in parallel
-   *   4. Dedupe on ESPN event id
-   *   5. Cap at 10 results
+   * P40 autocomplete (Wager pattern compleet): run two strategies in parallel,
+   * then merge + dedupe.
    *
-   * Errors per league are logged to console.warn and treated as empty list —
-   * one failing league does not kill the whole search.
+   *   1. searchViaApi — ESPN's `apis/search/v2` endpoint. Catches teams that
+   *      fall outside the scoreboard 14-day window (long-tail upcoming matches).
+   *   2. searchViaScoreboard — per-league scoreboard scan with team-name match.
+   *
+   * Results merge with API-first preference (it tends to return more
+   * informative subtitles), dedupe by ESPN event id, cap at 10.
    */
   async searchEvents(
     params: SearchEventsParams,
   ): Promise<ExternalEventSummary[]> {
-    const query = params.query.trim().toLowerCase();
+    const query = params.query.trim();
     if (query.length < 2) return [];
 
-    const entries = pathsForSport(params.sport, params.league);
+    const [apiResults, scoreboardResults] = await Promise.all([
+      this.searchViaApi(query, params.sport),
+      this.searchViaScoreboard(query, params.sport, params.league),
+    ]);
+
+    const seen = new Set<string>();
+    const merged: ExternalEventSummary[] = [];
+    for (const ev of [...apiResults, ...scoreboardResults]) {
+      if (seen.has(ev.providerEventId)) continue;
+      seen.add(ev.providerEventId);
+      merged.push(ev);
+      if (merged.length >= SEARCH_RESULT_LIMIT) break;
+    }
+    console.log(
+      `[ESPN] query="${query}" sport="${params.sport}" api=${apiResults.length} scoreboard=${scoreboardResults.length} merged=${merged.length}`,
+    );
+    return merged;
+  }
+
+  /**
+   * ESPN search API — undocumented `apis/search/v2` endpoint. Returns a
+   * cross-sport "upcoming" block; we filter to our requested sport via
+   * subtitle regex (best-effort, ESPN does not echo a structured sport tag).
+   */
+  private async searchViaApi(
+    query: string,
+    sport: SupportedSport,
+  ): Promise<ExternalEventSummary[]> {
+    try {
+      const qs = new URLSearchParams({
+        query,
+        limit: "30",
+        type: "upcoming",
+      });
+      const url = `${SEARCH_URL}?${qs.toString()}`;
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: {
+          "User-Agent": ESPN_USER_AGENT,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        console.warn(
+          `[ESPN] searchViaApi HTTP ${res.status} for query="${query}"`,
+        );
+        return [];
+      }
+      const data = (await res.json()) as EspnSearchResponse;
+      const upcomingBlock = data.results?.find((r) => r.type === "upcoming");
+      const items = upcomingBlock?.contents ?? [];
+      const wrongSport = ESPN_WRONG_SPORT_PATTERNS[sport];
+      const q = query.toLowerCase();
+      const seen = new Set<string>();
+      const events: ExternalEventSummary[] = [];
+
+      for (const item of items) {
+        const name = item.displayName ?? "";
+        if (name.startsWith("En Español-")) continue;
+        if (seen.has(item.eventId)) continue;
+        seen.add(item.eventId);
+
+        const subtitle = item.subtitle ?? "";
+        if (wrongSport.test(subtitle)) continue;
+
+        const nameClean = name.replace(/ \(.*\)$/, "").trim();
+        const sep = nameClean.includes(" vs. ") ? " vs. " : " vs ";
+        const parts = nameClean.split(sep);
+        if (parts.length !== 2) continue;
+
+        const homeTeam = parts[0].trim();
+        const awayTeam = parts[1].trim();
+        if (!homeTeam || !awayTeam) continue;
+        if (
+          !homeTeam.toLowerCase().includes(q) &&
+          !awayTeam.toLowerCase().includes(q)
+        ) {
+          continue;
+        }
+
+        const league = subtitle.includes("•")
+          ? (subtitle.split("•")[1]?.trim() ?? subtitle)
+          : subtitle;
+        const startsAt = item.date ? new Date(item.date) : new Date();
+        const endsAt = new Date(
+          startsAt.getTime() + DEFAULT_DURATION_HOURS * 60 * 60 * 1000,
+        );
+
+        events.push({
+          provider: "espn",
+          providerEventId: item.eventId,
+          sport,
+          league,
+          homeTeam,
+          awayTeam,
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString(),
+          label: `${homeTeam} vs ${awayTeam} — ${league} — ${startsAt.toLocaleDateString("en-GB")}`,
+        });
+
+        if (events.length >= SEARCH_API_PER_QUERY_LIMIT) break;
+      }
+      return events;
+    } catch (err) {
+      console.error(`[ESPN] searchViaApi error for query="${query}":`, err);
+      return [];
+    }
+  }
+
+  /**
+   * Scoreboard scan — fan out across every league mapped to `sport` and
+   * filter team names client-side. Catches matches the search API misses
+   * (e.g. lower-profile fixtures within the 14-day window).
+   */
+  private async searchViaScoreboard(
+    query: string,
+    sport: SupportedSport,
+    leagueFilter: string | undefined,
+  ): Promise<ExternalEventSummary[]> {
+    const entries = pathsForSport(sport, leagueFilter);
     if (entries.length === 0) return [];
 
     const dateRange = formatDateRange(SCOREBOARD_LOOKAHEAD_DAYS);
+    const queryLower = query.toLowerCase();
 
     const tasks = entries.map(({ leagueKey, path }) =>
       scanLeagueScoreboard({
-        sport: params.sport,
+        sport,
         leagueKey,
         path,
         dateRange,
-        query,
+        query: queryLower,
       }),
     );
 
@@ -155,7 +304,6 @@ export class EspnProvider implements ExternalResultProvider {
       }
     }
 
-    // Dedupe by providerEventId (ESPN ids are globally unique).
     const byId = new Map<string, ExternalEventSummary>();
     for (const ev of all) {
       if (!byId.has(ev.providerEventId)) byId.set(ev.providerEventId, ev);
