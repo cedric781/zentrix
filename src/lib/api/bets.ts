@@ -1,8 +1,9 @@
 /**
  * Bet endpoint wrappers — thin layer over apiFetch.
  *
- * Note: GET /api/bets is "MY BETS" (requires auth, filtered by current user
- * server-side). There is no public-feed endpoint yet.
+ * Note: GET /api/bets supports both "mine" (default — caller's own bets) and
+ * "all" (public marketplace) scope via the ?scope= query param. Auth required
+ * in both cases — there is no anonymous public-feed endpoint.
  */
 
 import { apiFetch } from "./client";
@@ -26,6 +27,10 @@ export type ListBetsParams = {
   /** Page size; backend caps via parseListQuery. */
   take?: number;
   status?: BetStatus;
+  /** 'mine' = caller's bets (default); 'all' = public marketplace. */
+  scope?: "mine" | "all";
+  /** Optional category filter (denormalized on Bet, see P34 Part A). */
+  category?: string;
 };
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -47,6 +52,8 @@ export async function listBets(
     cursor: params.cursor,
     take: params.take,
     status: params.status,
+    scope: params.scope,
+    category: params.category,
   });
   return apiFetch<Paginated<BetSerialized>>(`/api/bets${qs}`, {
     method: "GET",
