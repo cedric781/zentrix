@@ -1,6 +1,7 @@
 import "server-only";
 import { getEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { getApiKeyFromRpcUrl } from "./helius-types";
 
 /**
  * After a user is provisioned with an embeddedWalletAddress, call this to
@@ -31,9 +32,4 @@ export async function registerWalletWithHelius(address: string): Promise<void> {
   } catch (err) {
     logger.warn({ address, err: (err as Error).message }, "helius register failed (poller will catch)");
   }
-}
-
-function getApiKeyFromRpcUrl(rpcUrl: string): string {
-  const u = new URL(rpcUrl);
-  return u.searchParams.get("api-key") ?? "";
 }

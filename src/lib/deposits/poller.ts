@@ -5,21 +5,26 @@ import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { creditDeposit } from "./credit";
 import { logger } from "@/lib/logger";
-import { PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { fetchEnhancedTransactions } from "@/lib/solana/helius-enhanced";
+import { type HeliusEvent } from "@/lib/solana/helius-types";
 
 /**
  * Poll for USDC deposits to user embedded wallets.
  *
  * Strategy: for each user, fetch their USDC associated token account (ATA)
- * signature history since their last seen slot. For each new signature, parse
- * the USDC transfer amount and call creditDeposit.
+ * signature history since their last seen slot. Batch-fetch enhanced
+ * transaction data via Helius enhanced API, then iterate tokenTransfers
+ * IDENTICALLY to the webhook handler. This guarantees identical logIndex
+ * values across both paths — critical for deposit idempotency on the
+ * (txSignature, logIndex) unique constraint.
  *
  * This is the SLOW path; webhooks handle the fast path. But this is the
  * source of truth — if Helius drops an event, this catches it within 1 min.
  *
  * To keep cost reasonable: only poll users active in the last 7 days.
- * Cap fetch at 100 sigs per user per run.
+ * Cap fetch at 100 sigs per user per run (also fits Helius enhanced API
+ * batch limit of 100 signatures per call).
  */
 export async function runDepositPoller(opts?: { limit?: number }): Promise<{
   usersScanned: number;
@@ -28,7 +33,7 @@ export async function runDepositPoller(opts?: { limit?: number }): Promise<{
 }> {
   const env = getEnv();
   const conn = getSolanaConnection();
-  const usdcMint = parseSolanaAddress(env.USDC_MINT_ADDRESS);
+  const usdcMint = env.USDC_MINT_ADDRESS;
   const limit = opts?.limit ?? 50;
 
   const recentUsers = await prisma.user.findMany({
@@ -46,10 +51,11 @@ export async function runDepositPoller(opts?: { limit?: number }): Promise<{
   for (const user of recentUsers) {
     if (!user.embeddedWalletAddress) continue;
     try {
-      const ownerPk = parseSolanaAddress(user.embeddedWalletAddress);
-      const ata = getAssociatedTokenAddressSync(usdcMint, ownerPk, true);
+      const ata = getAssociatedTokenAddressSync(
+        parseSolanaAddress(usdcMint),
+        parseSolanaAddress(user.embeddedWalletAddress),
+      );
 
-      // Get last known signature we've credited for this user.
       const last = await prisma.deposit.findFirst({
         where: { userId: user.id, status: "CREDITED" },
         orderBy: { slot: "desc" },
@@ -58,62 +64,89 @@ export async function runDepositPoller(opts?: { limit?: number }): Promise<{
 
       const sigs = await conn.getSignaturesForAddress(ata, {
         limit: 100,
-        until: last?.txSignature, // stop at last credited
+        until: last?.txSignature,
       });
 
-      for (const sig of sigs) {
-        if (sig.err) continue;
-        // Fetch the parsed transaction to extract token transfer.
-        const txDetail = await conn.getParsedTransaction(sig.signature, {
-          maxSupportedTransactionVersion: 0,
-          commitment: "finalized",
-        });
-        if (!txDetail) continue;
+      const successfulSignatures = sigs
+        .filter((s) => !s.err)
+        .map((s) => s.signature);
+      if (successfulSignatures.length === 0) {
+        continue;
+      }
 
-        // Walk instruction list for SPL transfers to our ATA.
+      let events: HeliusEvent[];
+      try {
+        events = await fetchEnhancedTransactions(successfulSignatures);
+      } catch (err) {
+        logger.error(
+          { err, userId: user.id, count: successfulSignatures.length },
+          "deposit-poller: enhanced API fetch failed",
+        );
+        errors++;
+        continue;
+      }
+
+      for (const event of events) {
         let logIndex = 0;
-        const instructions = txDetail.transaction.message.instructions;
-        for (const ix of instructions) {
-          // We only handle parsed SPL token instructions
-          if (
-            "parsed" in ix &&
-            ix.program === "spl-token" &&
-            (ix.parsed as { type?: string }).type &&
-            ["transfer", "transferChecked"].includes((ix.parsed as { type: string }).type)
-          ) {
-            const info = (ix.parsed as { info: Record<string, unknown> }).info;
-            const dest = info.destination as string | undefined;
-            if (dest !== ata.toBase58()) {
-              logIndex++;
-              continue;
-            }
+        for (const tt of event.tokenTransfers) {
+          if (tt.mint !== usdcMint) {
+            logIndex++;
+            continue;
+          }
+          if (!tt.toUserAccount) {
+            logIndex++;
+            continue;
+          }
+          if (tt.toUserAccount !== user.embeddedWalletAddress) {
+            logIndex++;
+            continue;
+          }
 
-            // Amount: transferChecked has tokenAmount.amount (string of micro-units);
-            // legacy transfer has amount (string).
-            let amountStr: string | undefined;
-            if (info.tokenAmount && typeof info.tokenAmount === "object") {
-              amountStr = (info.tokenAmount as { amount?: string }).amount;
-            } else if (typeof info.amount === "string") {
-              amountStr = info.amount;
-            }
-            if (!amountStr) {
-              logIndex++;
-              continue;
-            }
-            const amountUnits = BigInt(amountStr);
+          const rawAmount = tt.rawTokenAmount?.tokenAmount;
+          if (!rawAmount) {
+            logger.warn(
+              { signature: event.signature, logIndex, userId: user.id },
+              "deposit-poller: skipping transfer with missing rawTokenAmount",
+            );
+            logIndex++;
+            continue;
+          }
 
-            const outcome = await creditDeposit({
+          let amountUnits: bigint;
+          try {
+            amountUnits = BigInt(rawAmount);
+          } catch {
+            logger.warn(
+              { signature: event.signature, logIndex, rawAmount, userId: user.id },
+              "deposit-poller: skipping transfer with invalid rawTokenAmount",
+            );
+            logIndex++;
+            continue;
+          }
+
+          if (amountUnits <= 0n) {
+            logIndex++;
+            continue;
+          }
+
+          try {
+            await creditDeposit({
               userId: user.id,
-              txSignature: sig.signature,
+              txSignature: event.signature,
               logIndex,
               amountUnits,
-              slot: BigInt(sig.slot),
+              slot: BigInt(event.slot),
             });
-            if (outcome.kind === "credited") newCredits++;
-            logIndex++;
-          } else {
-            logIndex++;
+            newCredits++;
+          } catch (err) {
+            logger.error(
+              { err, userId: user.id, signature: event.signature, logIndex },
+              "deposit-poller: creditDeposit failed",
+            );
+            errors++;
           }
+
+          logIndex++;
         }
       }
     } catch (err) {

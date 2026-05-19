@@ -1,44 +1,14 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getEnv } from "@/lib/env";
 import { creditDeposit } from "@/lib/deposits/credit";
 import { logger } from "@/lib/logger";
+import { HeliusEventArraySchema } from "@/lib/solana/helius-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/**
- * Helius "Enhanced Webhook" payload — only the fields we use.
- * Full schema: https://docs.helius.dev/webhooks
- *
- * We deliberately schema-validate strictly: any drift in Helius's payload
- * shape produces a clean 400 instead of a silent no-op.
- */
-const HeliusEvent = z.object({
-  signature: z.string().min(40),
-  slot: z.number().int().nonnegative(),
-  type: z.string(),
-  tokenTransfers: z
-    .array(
-      z.object({
-        fromUserAccount: z.string().nullable(),
-        toUserAccount: z.string().nullable(),
-        tokenAmount: z.number(), // Helius gives float; we re-derive from raw
-        rawTokenAmount: z
-          .object({
-            tokenAmount: z.string(), // string of int micro-units
-            decimals: z.number(),
-          })
-          .optional(),
-        mint: z.string(),
-      }),
-    )
-    .default([]),
-});
-
-const Body = z.array(HeliusEvent);
+export const maxDuration = 60; // sec — prevent Vercel 10s default timeout on batch events
 
 export async function POST(req: Request) {
   // 1. Verify Helius auth header BEFORE doing any work.
@@ -51,7 +21,7 @@ export async function POST(req: Request) {
 
   // 2. Parse body strictly.
   const raw = await req.json().catch(() => null);
-  const parsed = Body.safeParse(raw);
+  const parsed = HeliusEventArraySchema.safeParse(raw);
   if (!parsed.success) {
     logger.warn({ issues: parsed.error.issues }, "helius webhook bad body");
     return NextResponse.json({ error: "bad_body" }, { status: 400 });
