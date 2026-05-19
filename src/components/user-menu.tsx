@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { LogOut, User, Wallet } from "lucide-react";
+import { LogOut, Settings, User, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -44,6 +44,12 @@ export function UserMenu() {
           <Link href="/feed" className="cursor-pointer">
             <Wallet size={14} className="mr-2" />
             My bets
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/me" className="cursor-pointer">
+            <Settings size={14} className="mr-2" />
+            Settings
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

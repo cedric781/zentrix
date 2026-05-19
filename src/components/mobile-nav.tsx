@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: "/feed", label: "My bets" },
   { href: "/templates", label: "Browse" },
   { href: "/bets/new", label: "Create bet" },
+  { href: "/me", label: "Account" },
 ];
 
 interface Props {
