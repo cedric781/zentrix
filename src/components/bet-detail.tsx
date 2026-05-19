@@ -178,7 +178,10 @@ function ActionPanel({
   const acceptMutation = useMutation({
     mutationFn: async () => {
       if (!myUserId) throw new Error("Not signed in");
-      return acceptBet({ betId: bet.id, userId: myUserId });
+      return acceptBet(
+        { betId: bet.id },
+        { idempotencyKey: crypto.randomUUID() },
+      );
     },
     onSuccess: () => {
       toast.success("Bet accepted");
