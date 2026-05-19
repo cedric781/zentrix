@@ -6,15 +6,20 @@ import { TemplateCard } from "./template-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { useCreateBetState } from "@/components/bets/create-bet-context";
+import { useCreateBetStateOptional } from "@/components/bets/create-bet-context";
 
 const CATEGORIES = ["All", "Sport", "Combat", "Esports", "Games"] as const;
 
-export function TemplateGrid() {
+type Props = {
+  navigateOnClick?: boolean;
+};
+
+export function TemplateGrid({ navigateOnClick }: Props = {}) {
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const filter = category === "All" ? undefined : { category };
   const { data, isLoading, isError, error } = useTemplates(filter);
-  const { template: selected } = useCreateBetState();
+  const ctx = useCreateBetStateOptional();
+  const selected = ctx?.template ?? null;
 
   return (
     <div className="space-y-4">
@@ -53,7 +58,8 @@ export function TemplateGrid() {
             <TemplateCard
               key={t.id}
               template={t}
-              selected={selected?.id === t.id}
+              selected={!navigateOnClick && selected?.id === t.id}
+              navigateOnClick={navigateOnClick}
             />
           ))}
         </div>

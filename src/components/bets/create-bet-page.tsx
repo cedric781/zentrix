@@ -1,7 +1,10 @@
 "use client";
 
-import { CreateBetProvider } from "./create-bet-context";
+import { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { CreateBetProvider, useCreateBetState } from "./create-bet-context";
 import { TemplateGrid } from "@/components/templates/template-grid";
+import { useTemplates } from "@/hooks/use-templates";
 import { BetForm } from "./bet-form";
 import { BetReview } from "./bet-review";
 import { SubmitBetButton } from "./submit-bet-button";
@@ -9,6 +12,7 @@ import { SubmitBetButton } from "./submit-bet-button";
 export function CreateBetPage() {
   return (
     <CreateBetProvider>
+      <TemplatePreselect />
       <div className="container mx-auto py-8 space-y-8 max-w-4xl">
         <header>
           <h1 className="text-3xl font-bold">Create a Bet</h1>
@@ -44,4 +48,19 @@ export function CreateBetPage() {
       </div>
     </CreateBetProvider>
   );
+}
+
+function TemplatePreselect() {
+  const searchParams = useSearchParams();
+  const templateSlug = searchParams.get("template");
+  const { template, setTemplate } = useCreateBetState();
+  const { data } = useTemplates();
+
+  useEffect(() => {
+    if (!templateSlug || template || !data?.templates) return;
+    const found = data.templates.find((t) => t.slug === templateSlug);
+    if (found) setTemplate(found);
+  }, [templateSlug, template, data, setTemplate]);
+
+  return null;
 }

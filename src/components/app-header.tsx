@@ -29,6 +29,9 @@ export function AppHeader() {
             <NavLink href="/feed" current={pathname}>
               My bets
             </NavLink>
+            <NavLink href="/templates" current={pathname}>
+              Browse
+            </NavLink>
           </nav>
         )}
 

@@ -111,3 +111,10 @@ export function useCreateBetState() {
   }
   return ctx;
 }
+
+// Non-throwing variant for components used both inside and outside the wizard
+// (e.g. TemplateCard on the /templates browse page, which navigates instead
+// of mutating context).
+export function useCreateBetStateOptional() {
+  return useContext(CreateBetContext);
+}
