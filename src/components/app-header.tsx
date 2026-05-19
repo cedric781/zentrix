@@ -1,20 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
-import { Plus } from "lucide-react";
+import { Menu, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MobileNav } from "@/components/mobile-nav";
 import { UserMenu } from "@/components/user-menu";
 import { cn } from "@/lib/utils";
 
 export function AppHeader() {
   const pathname = usePathname();
   const { authenticated, ready } = usePrivy();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   if (pathname === "/" || pathname === "/signin") return null;
 
   return (
+    <>
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center justify-between gap-4 px-4 mx-auto max-w-6xl">
         <Link
@@ -46,6 +50,14 @@ export function AppHeader() {
                 </Link>
               </Button>
               <UserMenu />
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open menu"
+                className="sm:hidden text-muted-foreground hover:text-foreground"
+              >
+                <Menu size={20} />
+              </button>
             </>
           ) : ready && !authenticated ? (
             <Button asChild size="sm" variant="outline">
@@ -57,6 +69,8 @@ export function AppHeader() {
         </div>
       </div>
     </header>
+    <MobileNav open={mobileOpen} onClose={() => setMobileOpen(false)} />
+    </>
   );
 }
 
