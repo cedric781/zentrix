@@ -8,6 +8,7 @@ import { HeliusEventArraySchema } from "@/lib/solana/helius-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // sec — prevent Vercel 10s default timeout on batch events
 
 export async function POST(req: Request) {
   // 1. Verify Helius auth header BEFORE doing any work.
