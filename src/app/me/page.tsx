@@ -5,6 +5,7 @@ import { Copy, LogOut } from "lucide-react";
 import { toast } from "sonner";
 
 import { AuthGuard } from "@/components/auth-guard";
+import { DepositHistoryList } from "@/components/wallet/deposit-history-list";
 import { WalletBalanceCard } from "@/components/wallet/wallet-balance-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,8 @@ function MeContent() {
           </div>
         </CardContent>
       </Card>
+
+      <DepositHistoryList />
 
       <Card>
         <CardContent className="pt-6">

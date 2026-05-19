@@ -3,6 +3,7 @@ import type {
   BetResultClaim,
   BetParticipantConfirmation,
   BetTemplate,
+  Deposit,
   Dispute,
   FinancialAccount,
   Match,
@@ -188,6 +189,21 @@ export function serializeReputation(rep: UserReputation) {
     disputesWon: rep.disputesWon,
     disputesLost: rep.disputesLost,
     lastUpdatedAt: rep.lastUpdatedAt.toISOString(),
+  };
+}
+
+export function serializeDeposit(deposit: Deposit) {
+  return {
+    id: deposit.id,
+    userId: deposit.userId,
+    txSignature: deposit.txSignature,
+    logIndex: deposit.logIndex,
+    amountUnits: bigToStr(deposit.amountUnits),
+    slot: bigToStr(deposit.slot),
+    status: deposit.status,
+    ledgerTxId: deposit.ledgerTxId,
+    createdAt: deposit.createdAt.toISOString(),
+    creditedAt: deposit.creditedAt?.toISOString() ?? null,
   };
 }
 

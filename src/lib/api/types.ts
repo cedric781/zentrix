@@ -10,6 +10,7 @@ import type {
   serializeBet,
   serializeBetResultClaim,
   serializeBetParticipantConfirmation,
+  serializeDeposit,
   serializeDispute,
   serializeMatch,
   serializeTemplate,
@@ -24,6 +25,7 @@ export type BetSerialized = ReturnType<typeof serializeBet>;
 export type BetResultClaimSerialized = ReturnType<typeof serializeBetResultClaim>;
 export type BetParticipantConfirmationSerialized = ReturnType<typeof serializeBetParticipantConfirmation>;
 export type BetTemplateSerialized = ReturnType<typeof serializeTemplate>;
+export type DepositSerialized = ReturnType<typeof serializeDeposit>;
 export type DisputeSerialized = ReturnType<typeof serializeDispute>;
 export type MatchSerialized = ReturnType<typeof serializeMatch>;
 export type UserSerialized = ReturnType<typeof serializeUser>;
