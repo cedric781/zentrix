@@ -31,6 +31,6 @@ export async function listTemplates(
 
 export async function getTemplate(slug: string): Promise<BetTemplate | null> {
   return prisma.betTemplate.findFirst({
-    where: { slug, deletedAt: null },
+    where: { slug, deletedAt: null, isActive: true },
   });
 }
