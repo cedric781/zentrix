@@ -15,7 +15,7 @@ type MatchCardProps = {
     creatorSide: string;
     acceptorSide: string | null;
     status: string;
-    stakeUnits: string | number | bigint;
+    stakeUnits: string | number | bigint | null;
     category: string | null;
     expiresAt: string | Date | null;
     createdAt: string | Date;
@@ -100,7 +100,9 @@ export function MatchCard({ bet }: MatchCardProps) {
               Stake per side
             </p>
             <p className="font-mono text-sm font-bold text-foreground">
-              {formatUsdc(BigInt(String(bet.stakeUnits)))}
+              {bet.stakeUnits != null
+                ? formatUsdc(BigInt(String(bet.stakeUnits)))
+                : "—"}
             </p>
           </div>
 

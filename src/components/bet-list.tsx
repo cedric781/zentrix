@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { BetCard } from "@/components/bet-card";
+import { MatchCard } from "@/components/feed/match-card";
 import { useBets } from "@/hooks/use-bets";
 import { CategoryTabs } from "@/components/categories/category-tabs";
 import { CATEGORY_CONFIG, type CategorySlug } from "@/lib/categories/config";
@@ -118,7 +118,7 @@ export function BetList() {
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {query.data.pages.flatMap((page) =>
-                page.items.map((bet) => <BetCard key={bet.id} bet={bet} />),
+                page.items.map((bet) => <MatchCard key={bet.id} bet={bet} />),
               )}
             </div>
           )}
