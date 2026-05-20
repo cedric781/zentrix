@@ -5,13 +5,16 @@ import { HeroSection } from "@/components/landing/hero-section";
 import { TemplateBento } from "@/components/landing/template-bento";
 import { GlassPanel } from "@/components/landing/glass-panel";
 import { FinalCta } from "@/components/landing/final-cta";
+import { AmbientGlow } from "@/components/landing/ambient-glow";
 
 export default async function LandingPage() {
   const templates = await listTemplates({ activeOnly: true });
   const serialized = templates.slice(0, 5).map(serializeTemplate);
 
   return (
-    <div className="min-h-screen bg-[var(--background-deep)]">
+    <div className="min-h-screen landing-bg-gradient relative">
+      <AmbientGlow />
+      <div className="relative z-10">
       <HeroSection />
 
       {/* ═══ HOW IT WORKS ═══ */}
@@ -101,6 +104,7 @@ export default async function LandingPage() {
 
       {/* ═══ FINAL CTA ═══ */}
       <FinalCta />
+      </div>
     </div>
   );
 }

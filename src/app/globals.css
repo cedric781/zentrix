@@ -180,4 +180,71 @@
   .font-display {
     font-family: var(--font-display), system-ui, sans-serif;
   }
+
+  /* P54 — Ambient glow background */
+  .ambient-glow-container {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .ambient-glow-spot {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    will-change: transform;
+  }
+
+  .ambient-glow-spot--emerald {
+    top: -10%;
+    right: -10%;
+    width: 60%;
+    height: 60%;
+    background: radial-gradient(
+      circle,
+      oklch(from var(--emerald-accent) l c h / 0.08) 0%,
+      transparent 70%
+    );
+  }
+
+  .ambient-glow-spot--electric {
+    bottom: 20%;
+    left: -10%;
+    width: 50%;
+    height: 50%;
+    background: radial-gradient(
+      circle,
+      oklch(0.55 0.2 240 / 0.06) 0%,
+      transparent 70%
+    );
+    filter: blur(100px);
+  }
+
+  /* P54 — Refined glass with lower opacity (40% vs default 70%) */
+  .glass-panel-refined {
+    background: oklch(from var(--surface-container) l c h / 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid oklch(from var(--outline-variant) l c h / 0.2);
+  }
+
+  /* P54 — Body background with subtle diagonal + corner glows */
+  .landing-bg-gradient {
+    background-color: var(--background-deep);
+    background-image:
+      radial-gradient(
+        circle at 0% 0%,
+        oklch(from var(--emerald-accent) l c h / 0.05) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        circle at 100% 100%,
+        oklch(0.55 0.2 240 / 0.05) 0%,
+        transparent 50%
+      ),
+      linear-gradient(180deg, var(--background) 0%, var(--background-deep) 100%);
+    background-attachment: fixed;
+  }
 }
