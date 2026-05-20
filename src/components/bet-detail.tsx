@@ -24,23 +24,17 @@ import { Separator } from "@/components/ui/separator";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { acceptBet } from "@/lib/api/bets";
 import { ApiError } from "@/lib/api/client";
+import { formatUsdc } from "@/lib/money/units";
 import type { BetSerialized } from "@/lib/api/types";
 import type { BetStatus } from "@/lib/api/bets";
 
-const USDC_DECIMALS = 1_000_000n;
-
 function formatStake(stakeUnits: string | null): string {
   if (!stakeUnits) return "\u2014";
-  let amount: bigint;
   try {
-    amount = BigInt(stakeUnits);
+    return formatUsdc(BigInt(stakeUnits));
   } catch {
     return "\u2014";
   }
-  const whole = amount / USDC_DECIMALS;
-  const fraction = amount % USDC_DECIMALS;
-  const fractionStr = fraction.toString().padStart(6, "0").replace(/0+$/, "");
-  return fractionStr.length > 0 ? `${whole}.${fractionStr}` : whole.toString();
 }
 
 function formatDate(iso: string | null): string {
