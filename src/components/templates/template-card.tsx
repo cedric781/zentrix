@@ -18,7 +18,7 @@ export function TemplateCard({ template, selected, navigateOnClick }: Props) {
 
   const handleActivate = () => {
     if (navigateOnClick) {
-      router.push(`/bets/new?template=${encodeURIComponent(template.slug)}`);
+      router.push(`/templates/${encodeURIComponent(template.slug)}`);
       return;
     }
     ctx?.setTemplate(template);
