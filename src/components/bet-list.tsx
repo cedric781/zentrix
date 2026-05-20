@@ -15,22 +15,16 @@
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { BetCard } from "@/components/bet-card";
 import { useBets } from "@/hooks/use-bets";
+import { CategoryTabs } from "@/components/categories/category-tabs";
+import { CATEGORY_CONFIG, type CategorySlug } from "@/lib/categories/config";
 import type { BetStatus } from "@/lib/api/bets";
 
 type Scope = "all" | "mine";
 type StatusFilter = BetStatus | "ALL";
-type CategoryFilter = "ALL" | "Sport" | "Combat" | "Esports" | "Games";
 
 const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "ALL" },
@@ -39,23 +33,22 @@ const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: "Settled", value: "SETTLED" },
 ];
 
-const CATEGORY_OPTIONS: { label: string; value: CategoryFilter }[] = [
-  { label: "All categories", value: "ALL" },
-  { label: "Sport", value: "Sport" },
-  { label: "Combat", value: "Combat" },
-  { label: "Esports", value: "Esports" },
-  { label: "Games", value: "Games" },
-];
-
 export function BetList() {
   const [tab, setTab] = useState<Scope>("all");
   const [status, setStatus] = useState<StatusFilter>("ALL");
-  const [category, setCategory] = useState<CategoryFilter>("ALL");
+  const [selectedCategory, setSelectedCategory] = useState<
+    CategorySlug | "all"
+  >("all");
+
+  const categoryFilter =
+    selectedCategory === "all"
+      ? undefined
+      : CATEGORY_CONFIG[selectedCategory].dbValue;
 
   const query = useBets({
     scope: tab,
     status: status === "ALL" ? undefined : status,
-    category: category === "ALL" ? undefined : category,
+    category: categoryFilter,
   });
 
   return (
@@ -67,23 +60,12 @@ export function BetList() {
         </TabsList>
       </Tabs>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={category}
-          onValueChange={(v) => setCategory(v as CategoryFilter)}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CATEGORY_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <CategoryTabs
+        value={selectedCategory}
+        onChange={setSelectedCategory}
+      />
 
+      <div className="flex flex-wrap items-center gap-2">
         {STATUS_OPTIONS.map((opt) => (
           <Button
             key={opt.value}
