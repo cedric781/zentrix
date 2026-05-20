@@ -5,36 +5,34 @@ import { useTemplates } from "@/hooks/use-templates";
 import { TemplateCard } from "./template-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { useCreateBetStateOptional } from "@/components/bets/create-bet-context";
-
-const CATEGORIES = ["All", "Sport", "Combat", "Esports", "Games"] as const;
+import { CategoryTabs } from "@/components/categories/category-tabs";
+import {
+  CATEGORY_CONFIG,
+  type CategorySlug,
+} from "@/lib/categories/config";
 
 type Props = {
   navigateOnClick?: boolean;
 };
 
 export function TemplateGrid({ navigateOnClick }: Props = {}) {
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
-  const filter = category === "All" ? undefined : { category };
+  const [selectedCategory, setSelectedCategory] = useState<
+    CategorySlug | "all"
+  >("all");
+
+  const filter =
+    selectedCategory === "all"
+      ? undefined
+      : { category: CATEGORY_CONFIG[selectedCategory].dbValue };
+
   const { data, isLoading, isError, error } = useTemplates(filter);
   const ctx = useCreateBetStateOptional();
   const selected = ctx?.template ?? null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2 flex-wrap">
-        {CATEGORIES.map((c) => (
-          <Badge
-            key={c}
-            variant={category === c ? "default" : "outline"}
-            className="cursor-pointer select-none"
-            onClick={() => setCategory(c)}
-          >
-            {c}
-          </Badge>
-        ))}
-      </div>
+    <div className="space-y-6">
+      <CategoryTabs value={selectedCategory} onChange={setSelectedCategory} />
 
       {isLoading && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -47,7 +45,8 @@ export function TemplateGrid({ navigateOnClick }: Props = {}) {
       {isError && (
         <Alert variant="destructive">
           <AlertDescription>
-            Failed to load templates: {error instanceof Error ? error.message : "Unknown error"}
+            Failed to load templates:{" "}
+            {error instanceof Error ? error.message : "Unknown error"}
           </AlertDescription>
         </Alert>
       )}
