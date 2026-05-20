@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { requireCurrentUser } from "@/lib/auth";
 import { getTemplate } from "@/lib/templates/service";
 import { mapDomainError } from "@/lib/http/errors";
 import { serializeTemplate } from "@/lib/http/serialize";
@@ -7,13 +6,13 @@ import { serializeTemplate } from "@/lib/http/serialize";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Public route — no auth. Templates are marketing content.
+// TODO: add IP-based rate limit before opening up further.
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   try {
-    await requireCurrentUser();
-
     const { slug } = await params;
     const template = await getTemplate(slug);
 
