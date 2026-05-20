@@ -37,8 +37,15 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  --brand: oklch(0.54 0.24 264);
+  --brand: oklch(0.72 0.18 162);
   --brand-foreground: oklch(1 0 0);
+  /* P50 mockup palette */
+  --background-deep: oklch(0.98 0.01 264);
+  --surface-container: oklch(0.95 0.01 264);
+  --surface-container-high: oklch(0.92 0.01 264);
+  --surface-container-low: oklch(0.97 0.01 264);
+  --emerald-accent: oklch(0.60 0.18 162);
+  --outline-variant: oklch(0.82 0.02 142);
 }
 
 .dark {
@@ -74,8 +81,15 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
-  --brand: oklch(0.62 0.22 264);
+  --brand: oklch(0.78 0.18 162);
   --brand-foreground: oklch(0.1 0 0);
+  /* P50 mockup palette — dark mode */
+  --background-deep: oklch(0.14 0.04 264);
+  --surface-container: oklch(0.20 0.04 264);
+  --surface-container-high: oklch(0.24 0.04 264);
+  --surface-container-low: oklch(0.17 0.04 264);
+  --emerald-accent: oklch(0.72 0.18 162);
+  --outline-variant: oklch(0.38 0.03 142);
 }
 
 @theme inline {
@@ -125,5 +139,41 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    background: oklch(from var(--surface-container) l c h / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid oklch(from var(--outline-variant) l c h / 0.3);
+  }
+
+  .milled-border {
+    box-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.05);
+    border: 1px solid var(--outline-variant);
+  }
+
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 768px) {
+    .bento-grid {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+  }
+
+  .hero-gradient-overlay {
+    background: linear-gradient(
+      to right,
+      var(--background) 0%,
+      oklch(from var(--background) l c h / 0.8) 50%,
+      transparent 100%
+    );
   }
 }
