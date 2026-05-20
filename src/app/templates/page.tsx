@@ -6,13 +6,20 @@ import { TemplateGrid } from "@/components/templates/template-grid";
 export default function TemplatesPage() {
   return (
     <AuthGuard>
-      <main className="mx-auto max-w-6xl px-6 py-12">
-        <div className="mb-10">
-          <h1 className="text-3xl font-bold tracking-tight">Pick your bet</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Browse templates by category. Click one to start creating a bet.
-          </p>
-        </div>
+      <main className="mx-auto max-w-7xl px-4 md:px-10 py-12">
+        <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <span className="text-[var(--brand)] font-mono text-[11px] uppercase tracking-widest mb-2 block">
+              Pick your bet
+            </span>
+            <h1 className="font-display text-3xl md:text-4xl font-bold tracking-tight">
+              Browse templates by category
+            </h1>
+            <p className="text-muted-foreground mt-2 max-w-xl">
+              Choose a template, set your stake, and challenge an opponent.
+            </p>
+          </div>
+        </header>
 
         <TemplateGrid navigateOnClick />
       </main>
