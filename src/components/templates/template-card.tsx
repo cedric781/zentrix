@@ -29,8 +29,8 @@ export function TemplateCard({ template, selected, navigateOnClick }: Props) {
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      className={`cursor-pointer transition-all hover:shadow-md ${
-        selected ? "ring-2 ring-primary" : ""
+      className={`card-glow card-gradient-surface rounded-xl border border-[var(--outline-variant)]/60 hover:border-[var(--brand)]/50 shadow-2xl cursor-pointer transition-all ${
+        selected ? "ring-2 ring-[var(--brand)]" : ""
       }`}
       onClick={handleActivate}
       onKeyDown={(e) => {
