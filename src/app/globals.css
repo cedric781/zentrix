@@ -247,4 +247,40 @@
       linear-gradient(180deg, var(--background) 0%, var(--background-deep) 100%);
     background-attachment: fixed;
   }
+
+  /* P57 — Card glow on hover (CSS-only, geen JS mouse-tracking) */
+  .card-glow {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .card-glow::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    background: linear-gradient(
+      135deg,
+      transparent,
+      oklch(from var(--brand) l c h / 0.2),
+      transparent
+    );
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+
+  .card-glow:hover::before {
+    opacity: 1;
+  }
+
+  /* P57 — Gradient card surface (mockup #3 inspired) */
+  .card-gradient-surface {
+    background: linear-gradient(
+      135deg,
+      var(--surface-container) 0%,
+      var(--surface-container-low) 100%
+    );
+  }
 }
