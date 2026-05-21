@@ -1,4 +1,14 @@
-import { describe, expect, it, beforeEach, afterAll } from "vitest";
+import { describe, expect, it, beforeEach, afterAll, vi } from "vitest";
+
+// Mock the Privy server client so intake's getUserById call returns a
+// configurable wallet shape. Default: delegated:true so the existing
+// happy-path tests still pass. Individual tests can override the mock
+// to assert WALLET_NOT_DELEGATED behavior.
+const mockGetUserById = vi.fn();
+vi.mock("@/lib/privy/server", () => ({
+  getPrivyServerClient: () => ({ getUserById: mockGetUserById }),
+}));
+
 import { prisma } from "@/lib/prisma";
 import { createWithdrawal } from "@/lib/withdrawals/intake";
 import { WithdrawalError } from "@/lib/withdrawals/errors";
@@ -6,6 +16,21 @@ import { creditDeposit } from "@/lib/deposits/credit";
 import { ONE_USDC } from "@/lib/money/units";
 import { _resetEnvCache } from "@/lib/env";
 import { resetCircuit, _resetCircuitBreakerCache } from "@/lib/circuit-breaker";
+
+function delegatedPrivyUser(opts: { delegated: boolean }) {
+  return {
+    id: "did:privy:test",
+    linkedAccounts: [
+      {
+        type: "wallet",
+        chainType: "solana",
+        walletClientType: "privy",
+        address: "Test1111111111111111111111111111111111111111",
+        delegated: opts.delegated,
+      },
+    ],
+  };
+}
 
 async function cleanupAll() {
   // Order matters: child rows first to avoid FK violations.
@@ -29,6 +54,10 @@ describe("createWithdrawal — intake validation", () => {
   beforeEach(async () => {
     await resetCircuit("withdrawals", "test-setup");
     _resetCircuitBreakerCache();
+    // Default: Privy reports wallet IS delegated, so non-delegation tests
+    // exercise the path beyond Step 1b without false-rejects.
+    mockGetUserById.mockReset();
+    mockGetUserById.mockResolvedValue(delegatedPrivyUser({ delegated: true }));
   });
 
   // Leave the DB in the same state we found it; later test files do
@@ -126,6 +155,25 @@ describe("createWithdrawal — intake validation", () => {
 
     const acct = await prisma.financialAccount.findFirst({ where: { userId: user.id } });
     expect(acct?.balanceUnits).toBe(90n * ONE_USDC); // 100 - 10
+  });
+
+  it("throws WALLET_NOT_DELEGATED when Privy reports delegated:false", async () => {
+    const user = await userWithBalance(50n * ONE_USDC);
+    mockGetUserById.mockResolvedValueOnce(
+      delegatedPrivyUser({ delegated: false }),
+    );
+    try {
+      await createWithdrawal({
+        userId: user.id,
+        amountUsdc: "10",
+        toAddress: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+      });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(WithdrawalError);
+      expect((err as WithdrawalError).code).toBe("WALLET_NOT_DELEGATED");
+    }
+    expect(await prisma.withdrawal.count()).toBe(0);
   });
 
   it("respects WITHDRAWALS_DISABLED env kill-switch", async () => {

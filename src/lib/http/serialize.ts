@@ -142,6 +142,7 @@ export function serializeUser(user: User) {
     id: user.id,
     email: user.email,
     embeddedWalletAddress: user.embeddedWalletAddress,
+    walletDelegatedAt: user.walletDelegatedAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };

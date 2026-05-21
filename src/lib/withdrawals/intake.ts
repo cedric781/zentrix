@@ -13,6 +13,7 @@ import {
 import { getEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { isCircuitOpen } from "@/lib/circuit-breaker";
+import { getPrivyServerClient } from "@/lib/privy/server";
 import { WithdrawalError } from "./errors";
 import { HARDCODED_WITHDRAWALS_DISABLED } from "./kill-switch-hardcode";
 import { calculateWithdrawalFee } from "./fee";
@@ -72,6 +73,50 @@ export async function createWithdrawal(
       "WITHDRAWALS_DISABLED",
       "Withdrawals are temporarily paused (circuit breaker open).",
       503,
+    );
+  }
+
+  // ── Step 1b: Fresh delegation check via Privy SDK ─────────────────────
+  // Source of truth is Privy, NOT the User.walletDelegatedAt DB column —
+  // that column is a cache updated by /api/wallet/delegation-status and
+  // can be stale by seconds in the "user just delegated, withdraws now"
+  // race. Costs one extra API call per intake; acceptable for a flow
+  // that already does several DB roundtrips.
+  const user = await prisma.user.findUnique({
+    where: { id: input.userId },
+    select: { privyId: true },
+  });
+  if (!user) {
+    throw new WithdrawalError("INVALID_AMOUNT", "User not found", 400);
+  }
+  const privy = getPrivyServerClient();
+  let privyUser;
+  try {
+    privyUser = await privy.getUserById(user.privyId);
+  } catch (err) {
+    logger.error(
+      { err: (err as Error).message, userId: input.userId },
+      "intake: Privy getUserById failed",
+    );
+    throw new WithdrawalError(
+      "WALLET_NOT_DELEGATED",
+      "Could not verify wallet authorization. Please retry.",
+      503,
+    );
+  }
+  const solWallet = privyUser?.linkedAccounts.find(
+    (a) =>
+      a.type === "wallet" &&
+      "chainType" in a &&
+      a.chainType === "solana" &&
+      "walletClientType" in a &&
+      a.walletClientType === "privy",
+  ) as { delegated?: boolean } | undefined;
+  if (!solWallet?.delegated) {
+    throw new WithdrawalError(
+      "WALLET_NOT_DELEGATED",
+      "Please enable withdrawals in the portfolio page first.",
+      400,
     );
   }
 
