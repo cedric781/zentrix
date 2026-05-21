@@ -7,6 +7,7 @@ import {
 import {
   getAssociatedTokenAddressSync,
   createTransferCheckedInstruction,
+  createAssociatedTokenAccountInstruction,
 } from "@solana/spl-token";
 import { prisma } from "@/lib/prisma";
 import { getSolanaConnection } from "@/lib/solana/connection";
@@ -116,9 +117,13 @@ async function executeOne(w: {
     const fromAta = getAssociatedTokenAddressSync(usdcMint, fromPk, true);
     const toAta = getAssociatedTokenAddressSync(usdcMint, toPk, true);
 
+    // ── Ensure destination ATA exists ───────────────────────────────────
+    const toAtaAccount = await conn.getAccountInfo(toAta, "confirmed");
+    const needsCreateAta = !toAtaAccount;
+
     // ── Build SPL TransferChecked ───────────────────────────────────────
     const netUnits = w.amountUnits - w.feeUnits;
-    const ix: TransactionInstruction = createTransferCheckedInstruction(
+    const transferIx: TransactionInstruction = createTransferCheckedInstruction(
       fromAta,
       usdcMint,
       toAta,
@@ -127,7 +132,20 @@ async function executeOne(w: {
       6, // USDC decimals
     );
 
-    const tx = new Transaction().add(ix);
+    const tx = new Transaction();
+    if (needsCreateAta) {
+      logger.info(
+        `[withdrawal ${w.id}] destination ATA ${toAta.toBase58()} missing; prepending create instruction`,
+      );
+      const createAtaIx = createAssociatedTokenAccountInstruction(
+        fromPk, // payer (source wallet pays rent + fee)
+        toAta, // ata to create
+        toPk, // owner of the new ata
+        usdcMint, // mint
+      );
+      tx.add(createAtaIx);
+    }
+    tx.add(transferIx);
     tx.feePayer = fromPk;
     const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("finalized");
     tx.recentBlockhash = blockhash;
