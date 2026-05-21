@@ -9,6 +9,9 @@ const EnvSchema = z.object({
   DIRECT_URL: z.string().url().optional(),
   PRIVY_APP_ID: z.string().optional(),
   PRIVY_APP_SECRET: z.string().optional(),
+  // P61b — server-side wallet API authorization. Required for
+  // signAndSendTransaction against TEE wallets; absent in dev is OK.
+  PRIVY_AUTHORIZATION_PRIVATE_KEY: z.string().min(50).optional(),
   HELIUS_RPC_URL: z.string().url().optional(),
   HELIUS_WEBHOOK_SECRET: z.string().min(1).optional(),
   HELIUS_WEBHOOK_ID: z.string().min(1).optional(),
