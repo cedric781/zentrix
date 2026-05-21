@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { fetchEnhancedTransactions } from "@/lib/solana/helius-enhanced";
 import { type HeliusEvent } from "@/lib/solana/helius-types";
+import { parseUsdcAmountUnits } from "./parse-transfer";
 
 /**
  * Poll for USDC deposits to user embedded wallets.
@@ -102,29 +103,19 @@ export async function runDepositPoller(opts?: { limit?: number }): Promise<{
             continue;
           }
 
-          const rawAmount = tt.rawTokenAmount?.tokenAmount;
-          if (!rawAmount) {
+          const amountUnits = parseUsdcAmountUnits(tt);
+          if (amountUnits === null) {
             logger.warn(
-              { signature: event.signature, logIndex, userId: user.id },
-              "deposit-poller: skipping transfer with missing rawTokenAmount",
+              {
+                signature: event.signature,
+                logIndex,
+                userId: user.id,
+                hasRaw: Boolean(tt.rawTokenAmount),
+                tokenAmount: tt.tokenAmount,
+                rawTokenAmount: tt.rawTokenAmount,
+              },
+              "deposit-poller: skipping transfer with unparseable amount",
             );
-            logIndex++;
-            continue;
-          }
-
-          let amountUnits: bigint;
-          try {
-            amountUnits = BigInt(rawAmount);
-          } catch {
-            logger.warn(
-              { signature: event.signature, logIndex, rawAmount, userId: user.id },
-              "deposit-poller: skipping transfer with invalid rawTokenAmount",
-            );
-            logIndex++;
-            continue;
-          }
-
-          if (amountUnits <= 0n) {
             logIndex++;
             continue;
           }

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getEnv } from "@/lib/env";
 import { creditDeposit } from "@/lib/deposits/credit";
+import { parseUsdcAmountUnits } from "@/lib/deposits/parse-transfer";
 import { logger } from "@/lib/logger";
 import { HeliusEventArraySchema } from "@/lib/solana/helius-types";
 
@@ -57,19 +58,19 @@ export async function POST(req: Request) {
         continue;
       }
 
-      // Use rawTokenAmount when present (string preserves precision).
-      let amountUnits: bigint;
-      if (tt.rawTokenAmount) {
-        amountUnits = BigInt(tt.rawTokenAmount.tokenAmount);
-      } else {
-        // Fallback: convert float to BigInt with care. This branch SHOULD never
-        // hit for USDC since Helius always provides rawTokenAmount, but we
-        // fail loud rather than silently mis-credit.
-        logger.error(
-          { sig: event.signature },
-          "helius event missing rawTokenAmount — REJECTED",
+      const amountUnits = parseUsdcAmountUnits(tt);
+      if (amountUnits === null) {
+        logger.warn(
+          {
+            sig: event.signature,
+            logIndex,
+            hasRaw: Boolean(tt.rawTokenAmount),
+            tokenAmount: tt.tokenAmount,
+          },
+          "helius webhook: skipping transfer with unparseable amount",
         );
-        return NextResponse.json({ error: "missing_raw_amount" }, { status: 400 });
+        logIndex++;
+        continue;
       }
 
       try {
