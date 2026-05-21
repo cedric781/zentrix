@@ -144,9 +144,10 @@ model User {
   id                    String   @id @default(uuid())
   privyId               String   @unique @map("privy_id")
   email                 String?  @unique
-  embeddedWalletAddress String?  @unique @map("embedded_wallet_address")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  embeddedWalletAddress String?   @unique @map("embedded_wallet_address")
+  walletDelegatedAt     DateTime? @map("wallet_delegated_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   financialAccount FinancialAccount? @relation("UserFinancialAccount")
   deposits         Deposit[]

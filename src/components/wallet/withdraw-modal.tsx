@@ -20,7 +20,9 @@ import { Label } from "@/components/ui/label";
 import { useWithdrawalFee } from "@/hooks/use-withdrawal-fee";
 import { useCreateWithdrawal } from "@/hooks/use-create-withdrawal";
 import { useBalance } from "@/hooks/use-balance";
+import { useWalletDelegation } from "@/hooks/use-wallet-delegation";
 import { getWithdrawalErrorMessage } from "@/lib/withdrawals/error-messages";
+import { WalletDelegationPrompt } from "./wallet-delegation-prompt";
 
 interface Props {
   open: boolean;
@@ -73,6 +75,8 @@ export function WithdrawModal({ open, onOpenChange }: Props) {
   );
 
   const createMutation = useCreateWithdrawal();
+  const delegation = useWalletDelegation();
+  const isAuthorized = delegation.status === "AUTHORIZED";
 
   const addressLooksValid =
     toAddress.length === 0 || looksLikeSolanaAddress(toAddress);
@@ -80,6 +84,7 @@ export function WithdrawModal({ open, onOpenChange }: Props) {
 
   const canSubmit =
     authenticated &&
+    isAuthorized &&
     !!amountMicro &&
     BigInt(amountMicro) > 0n &&
     BigInt(amountMicro) <= BigInt(balanceMicro) &&
@@ -124,6 +129,8 @@ export function WithdrawModal({ open, onOpenChange }: Props) {
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {!isAuthorized && <WalletDelegationPrompt />}
+
           <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
             <span className="text-muted-foreground">Available</span>
             <span className="font-mono font-medium">
@@ -231,6 +238,7 @@ export function WithdrawModal({ open, onOpenChange }: Props) {
           <Button
             onClick={handleSubmit}
             disabled={!canSubmit}
+            title={!isAuthorized ? "Enable withdrawals above first" : undefined}
             className="bg-[#2563EB] hover:bg-[#2563EB]/90 text-white sm:w-auto w-full"
           >
             {createMutation.isPending ? (
