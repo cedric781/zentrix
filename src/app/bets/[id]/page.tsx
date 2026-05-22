@@ -7,7 +7,7 @@
  */
 
 import { use } from "react";
-import { AuthGuard } from "@/components/auth-guard";
+import { AuthGuard } from "@/components/auth/auth-guard";
 import { BetDetail } from "@/components/bets/bet-detail";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";

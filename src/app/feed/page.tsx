@@ -1,6 +1,6 @@
 "use client";
 
-import { AuthGuard } from "@/components/auth-guard";
+import { AuthGuard } from "@/components/auth/auth-guard";
 import { AmbientGlow } from "@/components/landing/ambient-glow";
 import { BetList } from "@/components/bets/bet-list";
 import { WalletBalanceCard } from "@/components/wallet/wallet-balance-card";

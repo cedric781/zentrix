@@ -1,7 +1,7 @@
 "use client";
 
 import { Inbox } from "lucide-react";
-import { AuthGuard } from "@/components/auth-guard";
+import { AuthGuard } from "@/components/auth/auth-guard";
 import { AmbientGlow } from "@/components/landing/ambient-glow";
 import { WalletBalanceCard } from "@/components/wallet/wallet-balance-card";
 import { MetricCard } from "@/components/portfolio/metric-card";

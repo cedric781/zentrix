@@ -7,7 +7,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { Menu, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MobileNav } from "@/components/mobile-nav";
-import { UserMenu } from "@/components/user-menu";
+import { UserMenu } from "@/components/auth/user-menu";
 import { cn } from "@/lib/utils";
 
 export function AppHeader() {

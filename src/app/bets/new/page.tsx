@@ -1,4 +1,4 @@
-import { AuthGuard } from "@/components/auth-guard";
+import { AuthGuard } from "@/components/auth/auth-guard";
 import { CreateBetPage } from "@/components/bets/create-bet-page";
 
 export const metadata = {

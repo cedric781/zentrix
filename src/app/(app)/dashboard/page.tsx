@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { LoginButton } from "@/components/LoginButton";
+import { LoginButton } from "@/components/auth/LoginButton";
 
 export default async function Dashboard() {
   const user = await getCurrentUser();
