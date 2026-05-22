@@ -12,6 +12,7 @@ import { getEnv } from "@/lib/env";
 import { BetError } from "./errors";
 import { getOrCreateBetEscrowAccount } from "./escrow";
 import { safeHashCompare } from "@/lib/crypto/safe-compare";
+import { computeTokenHash } from "@/lib/invites/token";
 import { settleBet } from "./settlement";
 import { trackReputationEvent } from "@/lib/reputation/service";
 import { isSupportedSport } from "@/lib/api/types";
@@ -117,10 +118,6 @@ function isPoolCreatorTriggerError(e: unknown): boolean {
     typeof e.message === "string" &&
     e.message.includes("Pool creator cannot bet on own pool")
   );
-}
-
-function computeTokenHash(plainToken: string): string {
-  return crypto.createHash("sha256").update(plainToken).digest("hex");
 }
 
 function assertUuidV4(key: string, fieldName: string): void {
