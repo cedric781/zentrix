@@ -50,7 +50,16 @@ export function SubmitBetButton() {
         onSuccess: (data) => {
           toast.success("Bet created");
           state.reset();
-          router.push(`/bets/${data.bet.id}`);
+          if (data.inviteToken) {
+            state.setCreated({
+              betId: data.bet.id,
+              inviteToken: data.inviteToken,
+              expiresAt: new Date(data.bet.expiresAt),
+            });
+          } else {
+            // Idempotency replay: token isn't persisted, just navigate.
+            router.push(`/bets/${data.bet.id}`);
+          }
         },
         onError: (err) => {
           if (err instanceof ApiError) {

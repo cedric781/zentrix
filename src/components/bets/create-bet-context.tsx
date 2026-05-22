@@ -18,6 +18,12 @@ import type {
   CreateBetExternalRef,
 } from "@/lib/api/types";
 
+export type CreatedBet = {
+  betId: string;
+  inviteToken: string;
+  expiresAt: Date;
+};
+
 type CreateBetState = {
   template: BetTemplateSerialized | null;
   setTemplate: (t: BetTemplateSerialized | null) => void;
@@ -38,6 +44,9 @@ type CreateBetState = {
   externalRef: CreateBetExternalRef | null;
   setExternalRef: (ref: CreateBetExternalRef | null) => void;
 
+  created: CreatedBet | null;
+  setCreated: (c: CreatedBet | null) => void;
+
   reset: () => void;
 };
 
@@ -52,6 +61,7 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
   const [stakeUnits, setStakeUnits] = useState("");
   const [expiresInHours, setExpiresInHours] = useState(24);
   const [externalRef, setExternalRefState] = useState<CreateBetExternalRef | null>(null);
+  const [created, setCreated] = useState<CreatedBet | null>(null);
 
   // useCallback so ExternalEventPicker's useEffect dep array stays stable.
   const setExternalRef = useCallback((ref: CreateBetExternalRef | null) => {
@@ -96,6 +106,8 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
         setExpiresInHours,
         externalRef,
         setExternalRef,
+        created,
+        setCreated,
         reset,
       }}
     >

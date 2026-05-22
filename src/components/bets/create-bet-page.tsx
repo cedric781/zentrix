@@ -8,6 +8,7 @@ import { useTemplates } from "@/hooks/use-templates";
 import { BetForm } from "./bet-form";
 import { BetReview } from "./bet-review";
 import { SubmitBetButton } from "./submit-bet-button";
+import { BetCreatedShare } from "./bet-created-share";
 
 export function CreateBetPage() {
   return (
@@ -20,33 +21,52 @@ export function CreateBetPage() {
             Pick a template, fill in the details, and challenge an opponent.
           </p>
         </header>
-
-        <section aria-labelledby="template-heading">
-          <h2 id="template-heading" className="text-xl font-semibold mb-4">
-            1. Pick a template
-          </h2>
-          <TemplateGrid />
-        </section>
-
-        <section aria-labelledby="form-heading">
-          <h2 id="form-heading" className="text-xl font-semibold mb-4">
-            2. Bet details
-          </h2>
-          <BetForm />
-        </section>
-
-        <section aria-labelledby="review-heading">
-          <h2 id="review-heading" className="text-xl font-semibold mb-4">
-            3. Review
-          </h2>
-          <BetReview />
-        </section>
-
-        <section>
-          <SubmitBetButton />
-        </section>
+        <CreateBetBody />
       </div>
     </CreateBetProvider>
+  );
+}
+
+function CreateBetBody() {
+  const { created } = useCreateBetState();
+
+  if (created) {
+    return (
+      <BetCreatedShare
+        betId={created.betId}
+        inviteToken={created.inviteToken}
+        expiresAt={created.expiresAt}
+      />
+    );
+  }
+
+  return (
+    <>
+      <section aria-labelledby="template-heading">
+        <h2 id="template-heading" className="text-xl font-semibold mb-4">
+          1. Pick a template
+        </h2>
+        <TemplateGrid />
+      </section>
+
+      <section aria-labelledby="form-heading">
+        <h2 id="form-heading" className="text-xl font-semibold mb-4">
+          2. Bet details
+        </h2>
+        <BetForm />
+      </section>
+
+      <section aria-labelledby="review-heading">
+        <h2 id="review-heading" className="text-xl font-semibold mb-4">
+          3. Review
+        </h2>
+        <BetReview />
+      </section>
+
+      <section>
+        <SubmitBetButton />
+      </section>
+    </>
   );
 }
 
