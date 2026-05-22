@@ -8,7 +8,7 @@
 
 import { use } from "react";
 import { AuthGuard } from "@/components/auth-guard";
-import { BetDetail } from "@/components/bet-detail";
+import { BetDetail } from "@/components/bets/bet-detail";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
