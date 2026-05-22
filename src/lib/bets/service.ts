@@ -12,7 +12,7 @@ import { getEnv } from "@/lib/env";
 import { BetError } from "./errors";
 import { getOrCreateBetEscrowAccount } from "./escrow";
 import { safeHashCompare } from "@/lib/crypto/safe-compare";
-import { computeTokenHash } from "@/lib/invites/token";
+import { computeTokenHash, TOKEN_HEX } from "@/lib/invites/token";
 import { settleBet } from "./settlement";
 import { trackReputationEvent } from "@/lib/reputation/service";
 import { isSupportedSport } from "@/lib/api/types";
@@ -21,7 +21,6 @@ import { logger } from "@/lib/logger";
 export { expireOpenBet, autoVoidProposedBet } from "./expire";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const TOKEN_HEX = /^[0-9a-f]{64}$/;
 
 export interface CreateBetInput {
   creatorId: string;

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { UnauthorizedError } from "@/lib/auth";
 import { BetError } from "@/lib/bets/errors";
 import { DisputeError } from "@/lib/disputes/errors";
+import { InviteError } from "@/lib/invites/errors";
 import { MatchError } from "@/lib/matches/errors";
 import { InvalidIdempotencyKeyError } from "./idempotency";
 import { InvalidCursorError } from "./pagination";
@@ -26,6 +27,7 @@ export function mapDomainError(err: unknown): NextResponse | null {
   if (
     err instanceof BetError ||
     err instanceof DisputeError ||
+    err instanceof InviteError ||
     err instanceof MatchError
   ) {
     return NextResponse.json(

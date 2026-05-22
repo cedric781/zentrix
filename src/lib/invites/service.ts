@@ -1,13 +1,16 @@
 import "server-only";
+import type { Bet, BetInvite } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { lockBet } from "@/lib/bets/service";
 import { computeTokenHash, generateInviteToken } from "./token";
 import { InviteError } from "./errors";
 
+const DEFAULT_INVITE_EXPIRY_MS = 5 * 24 * 60 * 60 * 1000;
+
 export interface RegenerateBetInviteInput {
   betId: string;
   userId: string;
-  expiresInMs: number;
+  expiresInMs?: number;
 }
 
 export interface RegenerateBetInviteResult {
@@ -61,7 +64,9 @@ export async function regenerateBetInvite(
 
     const tokenPlain = generateInviteToken();
     const tokenHash = computeTokenHash(tokenPlain);
-    const expiresAt = new Date(Date.now() + expiresInMs);
+    const expiresAt = new Date(
+      Date.now() + (expiresInMs ?? DEFAULT_INVITE_EXPIRY_MS),
+    );
 
     await tx.betInvite.update({
       where: { betId },
@@ -74,5 +79,17 @@ export async function regenerateBetInvite(
     });
 
     return { tokenPlain, expiresAt };
+  });
+}
+
+export type BetInviteWithBet = BetInvite & { bet: Bet };
+
+export async function getInviteByToken(input: {
+  tokenPlain: string;
+}): Promise<BetInviteWithBet | null> {
+  const tokenHash = computeTokenHash(input.tokenPlain);
+  return prisma.betInvite.findUnique({
+    where: { tokenHash },
+    include: { bet: true },
   });
 }
