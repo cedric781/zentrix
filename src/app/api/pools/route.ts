@@ -4,7 +4,9 @@ import { z } from "zod";
 import { PoolStatus } from "@prisma/client";
 import { requireCurrentUser } from "@/lib/auth";
 import { mapDomainError } from "@/lib/http/errors";
+import { parseIdempotencyKey } from "@/lib/http/idempotency";
 import { listPools } from "@/lib/pools/read";
+import { createPool } from "@/lib/pools/service";
 import { parseListQuery } from "@/lib/http/query";
 import { serializePool } from "@/lib/http/serialize";
 
@@ -16,6 +18,61 @@ const PoolStatusEnum = z.enum(
 );
 
 const ScopeEnum = z.enum(["mine", "public"]).default("public");
+
+const CreatePoolBody = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  bettingClosesAt: z.string().datetime(),
+});
+
+export async function POST(req: Request) {
+  let idempotencyKey: string;
+  try {
+    idempotencyKey = parseIdempotencyKey(req);
+  } catch (err) {
+    const mapped = mapDomainError(err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  let user;
+  try {
+    user = await requireCurrentUser();
+  } catch (err) {
+    const mapped = mapDomainError(err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  const parsed = CreatePoolBody.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "bad_body", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const result = await createPool({
+      creatorId: user.id,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      bettingClosesAt: new Date(parsed.data.bettingClosesAt),
+      idempotencyKey,
+    });
+    return NextResponse.json(
+      { data: serializePool(result.pool) },
+      {
+        status: 201,
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    );
+  } catch (err) {
+    const mapped = mapDomainError(err);
+    if (mapped) return mapped;
+    throw err;
+  }
+}
 
 export async function GET(req: Request) {
   try {
