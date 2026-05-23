@@ -18,6 +18,21 @@ import "server-only";
  *   BRACKET_PARTICIPANT_NOT_FOUND   — removeParticipant for an unknown participantId.
  *   BRACKET_INVALID_INPUT           — displayName length out of range, seed out of
  *                                     [1..64], or already-taken seed.
+ *
+ * Lock-time codes (src/lib/brackets/service.ts lockBracket):
+ *   BRACKET_ALREADY_LOCKED          — lockBracket called when pool.bracketLockedAt
+ *                                     is already set. Idempotency-key replay returns
+ *                                     the cached payload instead; this fires on a
+ *                                     fresh key against an already-locked pool.
+ *   BRACKET_NOT_READY               — participant count insufficient for the chosen
+ *                                     format (passes through from generator's
+ *                                     BRACKET_INVALID_PARTICIPANT_COUNT / SEEDS /
+ *                                     UNSUPPORTED_FOR_FORMAT — distinct service-level
+ *                                     code is reserved for future pre-flight checks).
+ *   BRACKET_MATCHES_NOT_EMPTY       — defensive: pool already has matches when
+ *                                     lockBracket runs. Should be impossible if
+ *                                     addMatchToPool's tournamentFormat guard worked,
+ *                                     but catches data left over from earlier states.
  */
 export type BracketErrorCode =
   | "BRACKET_INVALID_FORMAT"
@@ -25,7 +40,10 @@ export type BracketErrorCode =
   | "BRACKET_INVALID_SEEDS"
   | "BRACKET_UNSUPPORTED_FOR_FORMAT"
   | "BRACKET_PARTICIPANT_NOT_FOUND"
-  | "BRACKET_INVALID_INPUT";
+  | "BRACKET_INVALID_INPUT"
+  | "BRACKET_ALREADY_LOCKED"
+  | "BRACKET_NOT_READY"
+  | "BRACKET_MATCHES_NOT_EMPTY";
 
 export class BracketError extends Error {
   constructor(

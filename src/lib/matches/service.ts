@@ -204,6 +204,13 @@ export async function addMatchToPool(
         409,
       );
     }
+    if (pool.tournamentFormat !== "SIMPLE") {
+      throw new MatchError(
+        "MATCH_INVALID_INPUT",
+        "manual match add only allowed in SIMPLE pools; use lockBracket for tournament pools",
+        400,
+      );
+    }
 
     const match = await tx.match.create({
       data: {

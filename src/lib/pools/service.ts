@@ -225,6 +225,16 @@ export async function publishPool(
         400,
       );
     }
+    if (
+      pool.tournamentFormat !== "SIMPLE" &&
+      pool.bracketLockedAt === null
+    ) {
+      throw new PoolError(
+        "POOL_INVALID_STATUS",
+        "lock bracket before publishing tournament pool",
+        409,
+      );
+    }
 
     const updated = await tx.pool.updateMany({
       where: { id: poolId, status: "DRAFT" },
