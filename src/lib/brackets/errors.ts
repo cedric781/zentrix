@@ -33,6 +33,31 @@ import "server-only";
  *                                     lockBracket runs. Should be impossible if
  *                                     addMatchToPool's tournamentFormat guard worked,
  *                                     but catches data left over from earlier states.
+ *
+ * Advance-time codes (src/lib/brackets/service.ts advanceWinnerToBracket):
+ *   BRACKET_NOT_LOCKED              — advance attempted on a pool whose bracket
+ *                                     hasn't been generated yet (bracketLockedAt is null).
+ *   BRACKET_MATCH_NOT_READY         — advance attempted on a match still missing
+ *                                     participantA or participantB (upstream TBD).
+ *   BRACKET_PARTICIPANT_NOT_PARTICIPANT_OF_MATCH
+ *                                   — winnerParticipantId isn't one of the match's
+ *                                     two participants. 400.
+ *   BRACKET_ADVANCE_ALREADY_RECORDED
+ *                                   — next match has both participant slots filled
+ *                                     with IDs that don't match the advancing
+ *                                     winner/loser. Indicates double-advance with
+ *                                     differing keys (or data corruption). 409.
+ *   BRACKET_TARGET_FULL             — defensive 500: CAS UPDATE on next match's
+ *                                     null slot returned 0 rows after lock + read
+ *                                     said the slot was empty. Should be unreachable
+ *                                     under SELECT FOR UPDATE; presence indicates
+ *                                     a serious lock-discipline bug.
+ *
+ * INTENTIONAL LIMITATION (F3 MVP): bracket matches go directly SCHEDULED →
+ * SETTLED via advanceWinnerToBracket. No dispute window. Disputes on bracket
+ * matches require a freezable advance-undo mechanism deferred to a future phase
+ * (would let a dispute roll back already-propagated participants in next-round
+ * matches).
  */
 export type BracketErrorCode =
   | "BRACKET_INVALID_FORMAT"
@@ -43,7 +68,12 @@ export type BracketErrorCode =
   | "BRACKET_INVALID_INPUT"
   | "BRACKET_ALREADY_LOCKED"
   | "BRACKET_NOT_READY"
-  | "BRACKET_MATCHES_NOT_EMPTY";
+  | "BRACKET_MATCHES_NOT_EMPTY"
+  | "BRACKET_NOT_LOCKED"
+  | "BRACKET_MATCH_NOT_READY"
+  | "BRACKET_PARTICIPANT_NOT_PARTICIPANT_OF_MATCH"
+  | "BRACKET_ADVANCE_ALREADY_RECORDED"
+  | "BRACKET_TARGET_FULL";
 
 export class BracketError extends Error {
   constructor(

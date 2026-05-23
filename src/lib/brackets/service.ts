@@ -2,11 +2,14 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { Prisma, type PoolParticipant } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { type TxClient } from "@/lib/ledger";
 import { lockPool } from "@/lib/pools/service";
 import {
   findReplayedResponse,
+  lockMatch,
   recordMatchIdempotency,
 } from "@/lib/matches/service";
+import { MatchError } from "@/lib/matches/errors";
 import { PoolError } from "@/lib/pools/errors";
 import { BracketError } from "./errors";
 import {
@@ -408,4 +411,242 @@ export async function lockBracket(
 
     return { matchCount: planned.length, bracketLockedAt };
   });
+}
+
+// ── advanceWinnerToBracket ───────────────────────────────────────────
+
+export interface AdvanceWinnerToBracketInput {
+  matchId: string;
+  callerId: string;
+  winnerParticipantId: string;
+  idempotencyKey: string;
+}
+
+export interface AdvanceWinnerToBracketResult {
+  matchId: string;
+  winnerParticipantId: string;
+  advancedToWinId: string | null;
+  advancedToLossId: string | null;
+}
+
+/**
+ * Settle a bracket match and propagate winner (and loser, for DE) into
+ * next-round matches via nextMatchIdOnWin / nextMatchIdOnLoss FKs.
+ *
+ * Bracket pools only. SIMPLE pool matches use submitMatchResult instead.
+ *
+ * No dispute window: status goes SCHEDULED → SETTLED directly. See JSDoc
+ * in errors.ts for the rationale + future-phase plan.
+ */
+export async function advanceWinnerToBracket(
+  input: AdvanceWinnerToBracketInput,
+): Promise<AdvanceWinnerToBracketResult> {
+  const { matchId, callerId, winnerParticipantId, idempotencyKey } = input;
+
+  assertUuidV4(idempotencyKey, "idempotencyKey");
+  assertUuidV4(matchId, "matchId");
+  assertUuidV4(winnerParticipantId, "winnerParticipantId");
+
+  const namespacedKey = `bracket-advance:${idempotencyKey}`;
+
+  return await prisma.$transaction(async (tx) => {
+    const replayed = await findReplayedResponse<{
+      matchId: string;
+      winnerParticipantId: string;
+      advancedToWinId: string | null;
+      advancedToLossId: string | null;
+    }>(tx, namespacedKey);
+    if (replayed) return replayed;
+
+    await lockMatch(tx, matchId);
+    const match = await tx.match.findUnique({ where: { id: matchId } });
+    if (!match) {
+      throw new MatchError(
+        "MATCH_NOT_FOUND",
+        `match ${matchId} not found`,
+        404,
+      );
+    }
+    if (match.bracket === null) {
+      throw new BracketError(
+        "BRACKET_INVALID_FORMAT",
+        "use submitMatchResult for SIMPLE pool matches",
+        400,
+      );
+    }
+    if (match.status !== "SCHEDULED") {
+      throw new MatchError(
+        "MATCH_INVALID_STATUS",
+        `cannot advance from status=${match.status}`,
+        409,
+      );
+    }
+    if (match.participantAId === null || match.participantBId === null) {
+      throw new BracketError(
+        "BRACKET_MATCH_NOT_READY",
+        "match participants are not yet assigned (upstream TBD)",
+        409,
+      );
+    }
+    if (
+      winnerParticipantId !== match.participantAId &&
+      winnerParticipantId !== match.participantBId
+    ) {
+      throw new BracketError(
+        "BRACKET_PARTICIPANT_NOT_PARTICIPANT_OF_MATCH",
+        "winnerParticipantId is not a participant of this match",
+        400,
+      );
+    }
+
+    const pool = await tx.pool.findUniqueOrThrow({
+      where: { id: match.poolId },
+    });
+    if (pool.createdById !== callerId) {
+      throw new PoolError(
+        "POOL_NOT_OWNED_BY_CALLER",
+        "only the pool creator can advance winners",
+        403,
+      );
+    }
+    if (pool.bracketLockedAt === null) {
+      throw new BracketError(
+        "BRACKET_NOT_LOCKED",
+        "pool bracket has not been locked yet",
+        409,
+      );
+    }
+    if (pool.status !== "OPEN" && pool.status !== "CLOSED") {
+      throw new PoolError(
+        "POOL_INVALID_STATUS",
+        `pool must be OPEN or CLOSED to advance matches (got ${pool.status})`,
+        409,
+      );
+    }
+
+    const loserParticipantId =
+      winnerParticipantId === match.participantAId
+        ? match.participantBId
+        : match.participantAId;
+    const winnerSide =
+      winnerParticipantId === match.participantAId ? "A" : "B";
+
+    const now = new Date();
+    const settled = await tx.match.updateMany({
+      where: { id: matchId, status: "SCHEDULED" },
+      data: {
+        status: "SETTLED",
+        winnerParticipantId,
+        winnerSide,
+        settledAt: now,
+        submittedAt: now,
+      },
+    });
+    if (settled.count !== 1) {
+      throw new MatchError(
+        "MATCH_VERSION_MISMATCH",
+        `match ${matchId} concurrently mutated`,
+        409,
+      );
+    }
+
+    let advancedToWinId: string | null = null;
+    if (match.nextMatchIdOnWin !== null) {
+      advancedToWinId = await fillNextMatchSlot(
+        tx,
+        match.nextMatchIdOnWin,
+        winnerParticipantId,
+      );
+    }
+
+    let advancedToLossId: string | null = null;
+    if (match.nextMatchIdOnLoss !== null) {
+      advancedToLossId = await fillNextMatchSlot(
+        tx,
+        match.nextMatchIdOnLoss,
+        loserParticipantId,
+      );
+    }
+
+    const payload = {
+      matchId,
+      winnerParticipantId,
+      advancedToWinId,
+      advancedToLossId,
+    };
+
+    await recordMatchIdempotency(
+      tx,
+      namespacedKey,
+      "bracket-advance",
+      callerId,
+      payload as Prisma.InputJsonValue,
+    );
+
+    return payload;
+  });
+}
+
+/**
+ * Lock the target match, find its first empty A/B slot, write `participantId`
+ * via CAS (where slot IS NULL). Cached-state aware: returns the next-match id
+ * if `participantId` is already in either slot.
+ *
+ * Throws BRACKET_ADVANCE_ALREADY_RECORDED when both slots are filled with
+ * non-matching IDs (corruption / divergent double-advance).
+ * Throws BRACKET_TARGET_FULL when CAS UPDATE returns 0 rows after lock + read
+ * said the slot was empty — should be unreachable under SELECT FOR UPDATE.
+ */
+async function fillNextMatchSlot(
+  tx: TxClient,
+  nextMatchId: string,
+  participantId: string,
+): Promise<string> {
+  await lockMatch(tx, nextMatchId);
+  const nextMatch = await tx.match.findUniqueOrThrow({
+    where: { id: nextMatchId },
+  });
+
+  if (
+    nextMatch.participantAId === participantId ||
+    nextMatch.participantBId === participantId
+  ) {
+    return nextMatchId;
+  }
+
+  if (nextMatch.participantAId === null) {
+    const r = await tx.match.updateMany({
+      where: { id: nextMatchId, participantAId: null },
+      data: { participantAId: participantId },
+    });
+    if (r.count !== 1) {
+      throw new BracketError(
+        "BRACKET_TARGET_FULL",
+        `next match ${nextMatchId} slot A unexpectedly filled (CAS failed)`,
+        500,
+      );
+    }
+    return nextMatchId;
+  }
+
+  if (nextMatch.participantBId === null) {
+    const r = await tx.match.updateMany({
+      where: { id: nextMatchId, participantBId: null },
+      data: { participantBId: participantId },
+    });
+    if (r.count !== 1) {
+      throw new BracketError(
+        "BRACKET_TARGET_FULL",
+        `next match ${nextMatchId} slot B unexpectedly filled (CAS failed)`,
+        500,
+      );
+    }
+    return nextMatchId;
+  }
+
+  throw new BracketError(
+    "BRACKET_ADVANCE_ALREADY_RECORDED",
+    `next match ${nextMatchId} already has both participants filled with other IDs (data inconsistency or divergent double-advance)`,
+    409,
+  );
 }
