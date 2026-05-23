@@ -1,5 +1,5 @@
 import "server-only";
-import { Prisma, type Pool } from "@prisma/client";
+import { Prisma, type Pool, type TournamentFormat } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { type TxClient } from "@/lib/ledger";
 import { PoolError } from "./errors";
@@ -17,6 +17,9 @@ export interface CreatePoolInput {
   creatorId: string;
   title: string;
   description?: string;
+  /** Defaults to SIMPLE. Set at create time to declare tournament intent;
+   * actual bracket generation still requires lockBracket. */
+  tournamentFormat?: TournamentFormat;
   bettingClosesAt: Date;
   idempotencyKey: string;
 }
@@ -130,7 +133,14 @@ function cancelStateMessage(status: string): string {
 export async function createPool(
   input: CreatePoolInput,
 ): Promise<CreatePoolResult> {
-  const { creatorId, title, description, bettingClosesAt, idempotencyKey } = input;
+  const {
+    creatorId,
+    title,
+    description,
+    tournamentFormat,
+    bettingClosesAt,
+    idempotencyKey,
+  } = input;
 
   assertUuidV4(idempotencyKey, "idempotencyKey");
 
@@ -176,6 +186,7 @@ export async function createPool(
         title: trimmedTitle,
         description: trimmedDescription ?? null,
         status: "DRAFT",
+        tournamentFormat: tournamentFormat ?? "SIMPLE",
         bettingClosesAt,
       },
     });

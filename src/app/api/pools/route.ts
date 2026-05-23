@@ -22,6 +22,9 @@ const ScopeEnum = z.enum(["mine", "public"]).default("public");
 const CreatePoolBody = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
+  tournamentFormat: z
+    .enum(["SIMPLE", "SINGLE_ELIM", "DOUBLE_ELIM"])
+    .optional(),
   bettingClosesAt: z.string().datetime(),
 });
 
@@ -57,6 +60,7 @@ export async function POST(req: Request) {
       creatorId: user.id,
       title: parsed.data.title,
       description: parsed.data.description,
+      tournamentFormat: parsed.data.tournamentFormat,
       bettingClosesAt: new Date(parsed.data.bettingClosesAt),
       idempotencyKey,
     });

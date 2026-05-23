@@ -176,7 +176,9 @@ export function serializePool(pool: Pool) {
     title: pool.title,
     description: pool.description,
     status: pool.status,
+    tournamentFormat: pool.tournamentFormat,
     bettingClosesAt: pool.bettingClosesAt.toISOString(),
+    bracketLockedAt: pool.bracketLockedAt?.toISOString() ?? null,
     createdAt: pool.createdAt.toISOString(),
     updatedAt: pool.updatedAt.toISOString(),
   };
