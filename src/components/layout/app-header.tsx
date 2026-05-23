@@ -33,11 +33,14 @@ export function AppHeader() {
             <NavLink href="/feed" current={pathname}>
               My bets
             </NavLink>
-            <NavLink href="/portfolio" current={pathname}>
-              Portfolio
+            <NavLink href="/pools" current={pathname}>
+              Pools
             </NavLink>
             <NavLink href="/templates" current={pathname}>
               Browse
+            </NavLink>
+            <NavLink href="/portfolio" current={pathname}>
+              Portfolio
             </NavLink>
           </nav>
         )}

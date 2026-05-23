@@ -8,8 +8,9 @@ import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
   { href: "/feed", label: "My bets" },
-  { href: "/portfolio", label: "Portfolio" },
+  { href: "/pools", label: "Pools" },
   { href: "/templates", label: "Browse" },
+  { href: "/portfolio", label: "Portfolio" },
   { href: "/bets/new", label: "Create bet" },
   { href: "/me", label: "Account" },
 ];
