@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { requireCurrentUser } from "@/lib/auth";
 import { mapDomainError } from "@/lib/http/errors";
-import { getPool } from "@/lib/pools/read";
+import { PUBLIC_STATUSES, getPool } from "@/lib/pools/read";
 import { serializeMatch, serializePool } from "@/lib/http/serialize";
 
 export const runtime = "nodejs";
@@ -15,8 +15,13 @@ export async function GET(
   try {
     const user = await requireCurrentUser();
     const { id } = await ctx.params;
-    const pool = await getPool({ id, userId: user.id });
+    const pool = await getPool({ id });
     if (!pool) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    const isOwner = pool.createdById === user.id;
+    const isPublicReadable = PUBLIC_STATUSES.includes(pool.status);
+    if (!isOwner && !isPublicReadable) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
     return NextResponse.json({

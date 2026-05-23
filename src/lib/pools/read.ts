@@ -14,7 +14,7 @@ export interface ListPoolsInput {
 const TAKE_USER_DEFAULT = 20;
 const TAKE_USER_MAX = 50;
 
-const PUBLIC_STATUSES: PoolStatus[] = ["OPEN", "CLOSED", "SETTLED"];
+export const PUBLIC_STATUSES: PoolStatus[] = ["OPEN", "CLOSED", "SETTLED"];
 
 const POOL_WITH_MATCHES = Prisma.validator<Prisma.PoolDefaultArgs>()({
   include: { matches: true },
