@@ -8,6 +8,7 @@ import type {
   FinancialAccount,
   Match,
   Pool,
+  PoolParticipant,
   User,
   UserReputation,
 } from "@prisma/client";
@@ -178,6 +179,16 @@ export function serializePool(pool: Pool) {
     bettingClosesAt: pool.bettingClosesAt.toISOString(),
     createdAt: pool.createdAt.toISOString(),
     updatedAt: pool.updatedAt.toISOString(),
+  };
+}
+
+export function serializePoolParticipant(p: PoolParticipant) {
+  return {
+    id: p.id,
+    poolId: p.poolId,
+    displayName: p.displayName,
+    seed: p.seed,
+    createdAt: p.createdAt.toISOString(),
   };
 }
 

@@ -17,6 +17,7 @@ import type {
   serializeUser,
   serializeUserAdmin,
   serializePool,
+  serializePoolParticipant,
   serializeReputation,
   serializeFinancialAccount,
 } from "@/lib/http/serialize";
@@ -31,6 +32,7 @@ export type MatchSerialized = ReturnType<typeof serializeMatch>;
 export type UserSerialized = ReturnType<typeof serializeUser>;
 export type UserAdminSerialized = ReturnType<typeof serializeUserAdmin>;
 export type PoolSerialized = ReturnType<typeof serializePool>;
+export type PoolParticipantSerialized = ReturnType<typeof serializePoolParticipant>;
 export type ReputationSerialized = ReturnType<typeof serializeReputation>;
 export type FinancialAccountSerialized = ReturnType<typeof serializeFinancialAccount>;
 
