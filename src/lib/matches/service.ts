@@ -82,7 +82,14 @@ function assertUuidV4(key: string, fieldName: string): void {
   }
 }
 
-async function findReplayedResponse<T extends Prisma.JsonObject>(
+/**
+ * Generic idempotency-record lookup keyed by namespaced UUIDv4.
+ *
+ * TECH-DEBT: this and recordMatchIdempotency belong in a shared
+ * `src/lib/idempotency/db.ts` module — reused by matches and brackets
+ * services. Promoted to exports here as a bridge until that refactor lands.
+ */
+export async function findReplayedResponse<T extends Prisma.JsonObject>(
   tx: TxClient,
   namespacedKey: string,
 ): Promise<T | null> {
@@ -96,7 +103,12 @@ async function findReplayedResponse<T extends Prisma.JsonObject>(
   return existing.responseJson as T;
 }
 
-async function recordMatchIdempotency(
+/**
+ * Persist an idempotency record with a JSON response payload.
+ *
+ * TECH-DEBT: see findReplayedResponse — pending move to shared module.
+ */
+export async function recordMatchIdempotency(
   tx: TxClient,
   namespacedKey: string,
   scope: string,
