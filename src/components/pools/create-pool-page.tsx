@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { ApiError } from "@/lib/api/client";
 import { useCreatePool } from "@/hooks/use-create-pool";
+import type { TournamentFormat } from "@/lib/api/pools";
 
 const TITLE_MAX = 200;
 const DESC_MAX = 2000;
@@ -27,6 +28,8 @@ export function CreatePoolPage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [tournamentFormat, setTournamentFormat] =
+    useState<TournamentFormat>("SIMPLE");
   const [closesAtLocal, setClosesAtLocal] = useState<string>(defaultClosesAt);
   const { mutate, isPending } = useCreatePool();
 
@@ -58,6 +61,7 @@ export function CreatePoolPage() {
       {
         title: titleTrim,
         description: descTrim || undefined,
+        tournamentFormat,
         bettingClosesAt: closesAtIso,
       },
       {
@@ -124,6 +128,57 @@ export function CreatePoolPage() {
               {descTrim.length}/{DESC_MAX}
             </p>
           </div>
+
+          <fieldset className="space-y-3" disabled={isPending}>
+            <Label asChild>
+              <legend>Format</legend>
+            </Label>
+            {(
+              [
+                {
+                  value: "SIMPLE",
+                  label: "Simple matches",
+                  desc: "Multiple independent matches, no advancement tree.",
+                },
+                {
+                  value: "SINGLE_ELIM",
+                  label: "Single elimination",
+                  desc: "Bracket tournament — loser is out, winner advances. 2-64 participants.",
+                },
+                {
+                  value: "DOUBLE_ELIM",
+                  label: "Double elimination",
+                  desc: "Bracket with losers bracket — eliminated after 2 losses. Requires 2/4/8/16/32 participants.",
+                },
+              ] as const
+            ).map((opt) => (
+              <label
+                key={opt.value}
+                className="flex items-start gap-3 cursor-pointer rounded-md border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-[var(--brand)] has-[:checked]:bg-muted/30"
+              >
+                <input
+                  type="radio"
+                  name="tournamentFormat"
+                  value={opt.value}
+                  checked={tournamentFormat === opt.value}
+                  onChange={() => setTournamentFormat(opt.value)}
+                  className="mt-1 accent-[var(--brand)]"
+                />
+                <div>
+                  <span className="text-sm font-medium">{opt.label}</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {opt.desc}
+                  </p>
+                </div>
+              </label>
+            ))}
+            {tournamentFormat !== "SIMPLE" && (
+              <p className="text-xs text-muted-foreground">
+                Tournament pools need participants and a locked bracket before
+                publishing. You&apos;ll add participants on the next page.
+              </p>
+            )}
+          </fieldset>
 
           <div className="space-y-2">
             <Label htmlFor="pool-closes-at">Betting closes at</Label>
