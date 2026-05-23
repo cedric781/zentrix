@@ -89,3 +89,72 @@ export async function getPool(
     },
   );
 }
+
+// ── Mutations ────────────────────────────────────────────────────────
+
+export type CreatePoolInput = {
+  title: string;
+  description?: string;
+  /** ISO 8601 datetime string. Server validates 1h-90d ahead. */
+  bettingClosesAt: string;
+};
+
+export type CreatePoolResponse = { data: PoolSerialized };
+export type PublishPoolResponse = { data: PoolSerialized };
+
+export type AddMatchInput = {
+  title: string;
+  description?: string;
+  /** ISO 8601 datetime string. Server requires future time. */
+  eventTime?: string;
+};
+
+export type AddMatchResponse = { data: MatchSerialized };
+
+export async function createPool(
+  input: CreatePoolInput,
+  options: { token?: string; idempotencyKey: string; signal?: AbortSignal },
+): Promise<CreatePoolResponse> {
+  return apiFetch<CreatePoolResponse>(`/api/pools`, {
+    method: "POST",
+    token: options.token,
+    idempotencyKey: options.idempotencyKey,
+    body: input,
+    signal: options.signal,
+    retryAttempts: 0,
+  });
+}
+
+export async function publishPool(
+  poolId: string,
+  options: { token?: string; idempotencyKey: string; signal?: AbortSignal },
+): Promise<PublishPoolResponse> {
+  return apiFetch<PublishPoolResponse>(
+    `/api/pools/${encodeURIComponent(poolId)}/publish`,
+    {
+      method: "POST",
+      token: options.token,
+      idempotencyKey: options.idempotencyKey,
+      signal: options.signal,
+      retryAttempts: 0,
+    },
+  );
+}
+
+export async function addMatchToPool(
+  poolId: string,
+  input: AddMatchInput,
+  options: { token?: string; idempotencyKey: string; signal?: AbortSignal },
+): Promise<AddMatchResponse> {
+  return apiFetch<AddMatchResponse>(
+    `/api/pools/${encodeURIComponent(poolId)}/matches`,
+    {
+      method: "POST",
+      token: options.token,
+      idempotencyKey: options.idempotencyKey,
+      body: input,
+      signal: options.signal,
+      retryAttempts: 0,
+    },
+  );
+}
