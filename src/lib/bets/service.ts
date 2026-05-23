@@ -578,12 +578,11 @@ export async function cancelBet(input: CancelBetInput): Promise<CancelBetResult>
   const { userId, betId, idempotencyKey } = input;
 
   assertUuidV4(idempotencyKey, "idempotencyKey");
-  const ledgerKey = `bet-cancel:${betId}`;
 
   return await prisma.$transaction(async (tx) => {
     // 1. Idempotency short-circuit.
     const existingTx = await tx.ledgerTransaction.findUnique({
-      where: { idempotencyKey: ledgerKey },
+      where: { idempotencyKey },
     });
     if (existingTx?.refId) {
       const replayedBet = await tx.bet.findUnique({ where: { id: existingTx.refId } });
@@ -617,7 +616,7 @@ export async function cancelBet(input: CancelBetInput): Promise<CancelBetResult>
 
     const ledgerResult = await recordTransaction({
       tx,
-      idempotencyKey: ledgerKey,
+      idempotencyKey,
       description: `Bet cancellation refund (bet=${bet.id})`,
       initiatorUserId: userId,
       refType: "bet",
