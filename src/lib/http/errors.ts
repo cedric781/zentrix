@@ -5,6 +5,7 @@ import { BetError } from "@/lib/bets/errors";
 import { DisputeError } from "@/lib/disputes/errors";
 import { InviteError } from "@/lib/invites/errors";
 import { MatchError } from "@/lib/matches/errors";
+import { PoolError } from "@/lib/pools/errors";
 import { InvalidIdempotencyKeyError } from "./idempotency";
 import { InvalidCursorError } from "./pagination";
 
@@ -28,7 +29,8 @@ export function mapDomainError(err: unknown): NextResponse | null {
     err instanceof BetError ||
     err instanceof DisputeError ||
     err instanceof InviteError ||
-    err instanceof MatchError
+    err instanceof MatchError ||
+    err instanceof PoolError
   ) {
     return NextResponse.json(
       { error: err.code, message: err.message },
