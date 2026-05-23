@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { CountdownTimer } from "@/components/bets/countdown-timer";
 import { PoolStatusBadge } from "./pool-status-badge";
 import { MatchList } from "./match-list";
+import { OwnerActions } from "./owner-actions";
 import type { PoolStatus, PoolWithMatchesSerialized } from "@/lib/api/pools";
 
 function formatDate(iso: string): string {
@@ -71,7 +72,8 @@ export function PoolDetail({ pool }: { pool: PoolWithMatchesSerialized }) {
       </header>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
+          <OwnerActions pool={pool} />
           <MatchList matches={pool.matches} />
         </div>
 

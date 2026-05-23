@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
+import { Plus } from "lucide-react";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { AmbientGlow } from "@/components/landing/ambient-glow";
+import { Button } from "@/components/ui/button";
 import { PoolList } from "@/components/pools/pool-list";
 
 export default function PoolsPage() {
@@ -22,6 +25,12 @@ export default function PoolsPage() {
                 Discover open pools across all events.
               </p>
             </div>
+            <Button asChild size="sm" className="gap-1.5 self-start md:self-auto">
+              <Link href="/pools/new">
+                <Plus size={14} />
+                Create pool
+              </Link>
+            </Button>
           </header>
 
           <PoolList />
