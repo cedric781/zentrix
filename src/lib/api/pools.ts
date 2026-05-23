@@ -12,6 +12,7 @@ import { apiFetch } from "./client";
 import type {
   MatchSerialized,
   Paginated,
+  PoolParticipantSerialized,
   PoolSerialized,
 } from "./types";
 
@@ -24,6 +25,8 @@ export type PoolStatus =
   | "CANCELLED";
 
 export type PoolScope = "mine" | "public";
+
+export type TournamentFormat = "SIMPLE" | "SINGLE_ELIM" | "DOUBLE_ELIM";
 
 export type ListPoolsParams = {
   scope: PoolScope;
@@ -95,6 +98,8 @@ export async function getPool(
 export type CreatePoolInput = {
   title: string;
   description?: string;
+  /** Defaults to SIMPLE on server if omitted. */
+  tournamentFormat?: TournamentFormat;
   /** ISO 8601 datetime string. Server validates 1h-90d ahead. */
   bettingClosesAt: string;
 };
@@ -148,6 +153,98 @@ export async function addMatchToPool(
 ): Promise<AddMatchResponse> {
   return apiFetch<AddMatchResponse>(
     `/api/pools/${encodeURIComponent(poolId)}/matches`,
+    {
+      method: "POST",
+      token: options.token,
+      idempotencyKey: options.idempotencyKey,
+      body: input,
+      signal: options.signal,
+      retryAttempts: 0,
+    },
+  );
+}
+
+// ── Bracket operations ──────────────────────────────────────────────
+
+export type ListParticipantsResponse = {
+  items: PoolParticipantSerialized[];
+};
+
+export type AddParticipantInput = {
+  displayName: string;
+  seed?: number;
+};
+
+export type AddParticipantResponse = { data: PoolParticipantSerialized };
+
+export type RemoveParticipantResponse = {
+  data: { removedId: string; freedSeed: number };
+};
+
+export type LockBracketInput = {
+  format: "SINGLE_ELIM" | "DOUBLE_ELIM";
+};
+
+export type LockBracketResponse = {
+  data: { matchCount: number; bracketLockedAt: string };
+};
+
+export async function listParticipants(
+  poolId: string,
+  options: { token?: string; signal?: AbortSignal } = {},
+): Promise<ListParticipantsResponse> {
+  return apiFetch<ListParticipantsResponse>(
+    `/api/pools/${encodeURIComponent(poolId)}/participants`,
+    {
+      method: "GET",
+      token: options.token,
+      signal: options.signal,
+    },
+  );
+}
+
+export async function addParticipant(
+  poolId: string,
+  input: AddParticipantInput,
+  options: { token?: string; idempotencyKey: string; signal?: AbortSignal },
+): Promise<AddParticipantResponse> {
+  return apiFetch<AddParticipantResponse>(
+    `/api/pools/${encodeURIComponent(poolId)}/participants`,
+    {
+      method: "POST",
+      token: options.token,
+      idempotencyKey: options.idempotencyKey,
+      body: input,
+      signal: options.signal,
+      retryAttempts: 0,
+    },
+  );
+}
+
+export async function removeParticipant(
+  poolId: string,
+  participantId: string,
+  options: { token?: string; idempotencyKey: string; signal?: AbortSignal },
+): Promise<RemoveParticipantResponse> {
+  return apiFetch<RemoveParticipantResponse>(
+    `/api/pools/${encodeURIComponent(poolId)}/participants/${encodeURIComponent(participantId)}`,
+    {
+      method: "DELETE",
+      token: options.token,
+      idempotencyKey: options.idempotencyKey,
+      signal: options.signal,
+      retryAttempts: 0,
+    },
+  );
+}
+
+export async function lockBracket(
+  poolId: string,
+  input: LockBracketInput,
+  options: { token?: string; idempotencyKey: string; signal?: AbortSignal },
+): Promise<LockBracketResponse> {
+  return apiFetch<LockBracketResponse>(
+    `/api/pools/${encodeURIComponent(poolId)}/lock-bracket`,
     {
       method: "POST",
       token: options.token,
