@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { encodeCursor, decodeCursor } from "@/lib/http/pagination";
 
 export interface ListPoolsInput {
-  userId: string;
+  scope: "mine" | "public";
+  userId?: string;
   status?: PoolStatus;
   cursor?: string;
   take?: number;
@@ -12,6 +13,8 @@ export interface ListPoolsInput {
 
 const TAKE_USER_DEFAULT = 20;
 const TAKE_USER_MAX = 50;
+
+const PUBLIC_STATUSES: PoolStatus[] = ["OPEN", "CLOSED", "SETTLED"];
 
 const POOL_WITH_MATCHES = Prisma.validator<Prisma.PoolDefaultArgs>()({
   include: { matches: true },
@@ -24,10 +27,15 @@ export async function listPools(
   const take = Math.min(input.take ?? TAKE_USER_DEFAULT, TAKE_USER_MAX);
   const cursor = input.cursor ? decodeCursor(input.cursor) : null;
 
-  const where: Prisma.PoolWhereInput = {
-    createdById: input.userId,
-    ...(input.status && { status: input.status }),
-  };
+  const where: Prisma.PoolWhereInput =
+    input.scope === "mine"
+      ? {
+          createdById: input.userId,
+          ...(input.status && { status: input.status }),
+        }
+      : {
+          status: input.status ? input.status : { in: PUBLIC_STATUSES },
+        };
 
   const fetched = await prisma.pool.findMany({
     where,

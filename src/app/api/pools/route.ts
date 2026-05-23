@@ -15,6 +15,8 @@ const PoolStatusEnum = z.enum(
   Object.values(PoolStatus) as [string, ...string[]],
 );
 
+const ScopeEnum = z.enum(["mine", "public"]).default("public");
+
 export async function GET(req: Request) {
   try {
     const user = await requireCurrentUser();
@@ -25,9 +27,23 @@ export async function GET(req: Request) {
         { status: 400 },
       );
     }
+
+    const url = new URL(req.url);
+    const scopeResult = ScopeEnum.safeParse(
+      url.searchParams.get("scope") ?? undefined,
+    );
+    if (!scopeResult.success) {
+      return NextResponse.json(
+        { error: "bad_query", issues: scopeResult.error.issues },
+        { status: 400 },
+      );
+    }
+    const scope = scopeResult.data;
+
     const { status, cursor, take } = parsed.data;
     const result = await listPools({
-      userId: user.id,
+      scope,
+      userId: scope === "mine" ? user.id : undefined,
       status: status as PoolStatus | undefined,
       cursor,
       take,
