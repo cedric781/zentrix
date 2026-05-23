@@ -22,7 +22,9 @@ const mockPool = (): Pool => ({
   title: "Pool 1",
   description: null,
   status: "OPEN",
+  tournamentFormat: "SIMPLE",
   bettingClosesAt: T0,
+  bracketLockedAt: null,
   createdAt: T0,
   updatedAt: T0,
 });

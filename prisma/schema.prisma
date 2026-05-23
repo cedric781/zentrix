@@ -133,6 +133,18 @@ enum EvidenceType {
   VIDEO
 }
 
+enum TournamentFormat {
+  SIMPLE
+  SINGLE_ELIM
+  DOUBLE_ELIM
+}
+
+enum BracketSide {
+  WINNERS
+  LOSERS
+  FINAL
+}
+
 enum ConfirmationDecision {
   CONFIRM_WINNER
   DISAGREE
@@ -141,9 +153,9 @@ enum ConfirmationDecision {
 // ── MODELS ─────────────────────────────────────────────────────────────────
 
 model User {
-  id                    String   @id @default(uuid())
-  privyId               String   @unique @map("privy_id")
-  email                 String?  @unique
+  id                    String    @id @default(uuid())
+  privyId               String    @unique @map("privy_id")
+  email                 String?   @unique
   embeddedWalletAddress String?   @unique @map("embedded_wallet_address")
   walletDelegatedAt     DateTime? @map("wallet_delegated_at")
   createdAt             DateTime  @default(now()) @map("created_at")
@@ -514,44 +526,83 @@ model BetResultClaim {
 }
 
 model Pool {
-  id              String     @id @default(uuid())
-  createdById     String     @map("created_by_id")
-  title           String
-  description     String?
-  status          PoolStatus @default(DRAFT)
-  bettingClosesAt DateTime   @map("betting_closes_at")
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
+  id               String           @id @default(uuid())
+  createdById      String           @map("created_by_id")
+  title            String
+  description      String?
+  status           PoolStatus       @default(DRAFT)
+  tournamentFormat TournamentFormat @default(SIMPLE) @map("tournament_format")
+  bettingClosesAt  DateTime         @map("betting_closes_at")
+  bracketLockedAt  DateTime?        @map("bracket_locked_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  createdBy User    @relation("PoolCreator", fields: [createdById], references: [id])
-  matches   Match[]
-  bets      Bet[]
+  createdBy    User              @relation("PoolCreator", fields: [createdById], references: [id])
+  matches      Match[]
+  bets         Bet[]
+  participants PoolParticipant[]
 
   @@index([status], map: "idx_pools_status")
   @@index([createdById, createdAt], map: "idx_pools_creator_created")
+  @@index([tournamentFormat], map: "idx_pools_tournament_format")
   @@map("pools")
 }
 
+model PoolParticipant {
+  id          String   @id @default(uuid())
+  poolId      String   @map("pool_id")
+  displayName String   @map("display_name")
+  seed        Int
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  pool       Pool    @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  matchesAsA Match[] @relation("MatchParticipantA")
+  matchesAsB Match[] @relation("MatchParticipantB")
+  matchesWon Match[] @relation("MatchWinner")
+
+  @@unique([poolId, seed], map: "uq_pool_participants_pool_seed")
+  @@index([poolId], map: "idx_pool_participants_pool")
+  @@map("pool_participants")
+}
+
 model Match {
-  id                  String      @id @default(uuid())
-  poolId              String      @map("pool_id")
+  id                  String       @id @default(uuid())
+  poolId              String       @map("pool_id")
   title               String
   description         String?
-  eventTime           DateTime?   @map("event_time")
-  status              MatchStatus @default(SCHEDULED)
-  winnerSide          String?     @map("winner_side")
-  submittedAt         DateTime?   @map("submitted_at")
-  disputeWindowEndsAt DateTime?   @map("dispute_window_ends_at")
-  settledAt           DateTime?   @map("settled_at")
-  createdAt           DateTime    @default(now()) @map("created_at")
-  updatedAt           DateTime    @updatedAt @map("updated_at")
+  eventTime           DateTime?    @map("event_time")
+  status              MatchStatus  @default(SCHEDULED)
+  winnerSide          String?      @map("winner_side")
+  participantAId      String?      @map("participant_a_id")
+  participantBId      String?      @map("participant_b_id")
+  winnerParticipantId String?      @map("winner_participant_id")
+  bracket             BracketSide?
+  bracketSlot         String?      @map("bracket_slot")
+  round               Int?
+  nextMatchIdOnWin    String?      @map("next_match_id_on_win")
+  nextMatchIdOnLoss   String?      @map("next_match_id_on_loss")
+  submittedAt         DateTime?    @map("submitted_at")
+  disputeWindowEndsAt DateTime?    @map("dispute_window_ends_at")
+  settledAt           DateTime?    @map("settled_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
 
-  pool     Pool            @relation(fields: [poolId], references: [id], onDelete: Cascade)
-  bets     Bet[]
-  evidence MatchEvidence[]
+  pool              Pool             @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  bets              Bet[]
+  evidence          MatchEvidence[]
+  participantA      PoolParticipant? @relation("MatchParticipantA", fields: [participantAId], references: [id], onDelete: SetNull)
+  participantB      PoolParticipant? @relation("MatchParticipantB", fields: [participantBId], references: [id], onDelete: SetNull)
+  winnerParticipant PoolParticipant? @relation("MatchWinner", fields: [winnerParticipantId], references: [id], onDelete: SetNull)
+  nextMatchOnWin    Match?           @relation("MatchAdvanceWin", fields: [nextMatchIdOnWin], references: [id], onDelete: SetNull)
+  advancedToOnWin   Match[]          @relation("MatchAdvanceWin")
+  nextMatchOnLoss   Match?           @relation("MatchAdvanceLoss", fields: [nextMatchIdOnLoss], references: [id], onDelete: SetNull)
+  advancedToOnLoss  Match[]          @relation("MatchAdvanceLoss")
 
   @@index([poolId, status], map: "idx_matches_pool_status")
   @@index([eventTime], map: "idx_matches_event_time")
+  @@index([participantAId], map: "idx_matches_participant_a")
+  @@index([participantBId], map: "idx_matches_participant_b")
+  @@index([poolId, round, bracket], map: "idx_matches_pool_round_bracket")
   @@map("matches")
 }
 
