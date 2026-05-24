@@ -9,6 +9,8 @@ import { fetchExternalResult, NoProviderAvailableError } from "./router";
 import { CircuitOpenError } from "./circuit-breaker";
 import { mapWinner } from "./winner-mapping";
 import { trackReputationEvent } from "@/lib/reputation/service";
+import { prepareLedgerFields } from "@/lib/settlement/prepare";
+import { finalizeLedgerForBet } from "@/lib/settlement/finalize";
 import type { SupportedSport } from "@/lib/api/types";
 
 const BATCH_SIZE = 50;
@@ -21,6 +23,7 @@ export type ResolveBatchStats = {
   escalated: number;
   skipped: number;
   failed: number;
+  failedIds: string[];
 };
 
 type RefWithBet = Prisma.BetExternalRefGetPayload<{
@@ -80,6 +83,7 @@ export async function resolveBetsBatch(): Promise<ResolveBatchStats> {
     escalated: 0,
     skipped: 0,
     failed: 0,
+    failedIds: [],
   };
 
   for (const ref of refs) {
@@ -88,10 +92,11 @@ export async function resolveBetsBatch(): Promise<ResolveBatchStats> {
       stats[outcome]++;
     } catch (err) {
       logger.error(
-        { refId: ref.id, betId: ref.betId, error: err instanceof Error ? err.message : "unknown" },
-        "resolve-bets: unexpected error",
+        { refId: ref.id, betId: ref.betId, err: err instanceof Error ? err.message : String(err) },
+        "resolve-bets: per-bet failure",
       );
       stats.failed++;
+      stats.failedIds.push(ref.betId);
     }
   }
 
@@ -219,11 +224,26 @@ async function commitWinnerResolution(params: {
         resultStatus: "CONFIRMED",
         settledAt: new Date(),
         version: { increment: 1 },
+        ...prepareLedgerFields("SETTLE", winnerUserId),
       },
     });
     if (updated.count !== 1) {
       throw new Error(`bet_version_mismatch: ${ref.bet.id}`);
     }
+
+    await tx.betStateTransition.create({
+      data: {
+        betId: ref.bet.id,
+        fromStatus: ref.bet.status,
+        toStatus: "SETTLED",
+        actorType: "SYSTEM_EXTERNAL_RESOLVE",
+        actorId: null,
+        metadata: {
+          winnerUserId,
+          externalRefId: ref.id,
+        },
+      },
+    });
 
     await tx.betExternalRef.update({
       where: { id: ref.id },
@@ -235,22 +255,29 @@ async function commitWinnerResolution(params: {
       },
     });
 
-    await trackReputationEvent({
-      tx,
-      userId: winnerUserId,
-      eventType: "BET_SETTLED_AUTO",
-      refType: "BET",
-      refId: ref.bet.id,
-    });
-
-    // TODO P30.1: ledger payout via P22 settlement service.
-    // Currently only status flips — payout claimed via existing /bets/[id] flow.
-
     logger.info(
       { betId: ref.bet.id, winnerSide, matchedTeam, provider },
       "resolve-bets: settled",
     );
   });
+
+  try {
+    await finalizeLedgerForBet(ref.bet.id, "external-resolve-settle");
+    await prisma.$transaction(async (tx) => {
+      await trackReputationEvent({
+        tx,
+        userId: winnerUserId,
+        eventType: "BET_SETTLED_AUTO",
+        refType: "BET",
+        refId: ref.bet.id,
+      });
+    });
+  } catch (err) {
+    logger.error(
+      { betId: ref.bet.id, err: err instanceof Error ? err.message : String(err) },
+      "ledger finalize failed for settle — will retry via cron",
+    );
+  }
 }
 
 async function commitVoid(params: {
@@ -268,11 +295,26 @@ async function commitVoid(params: {
         resultStatus: "OVERRIDDEN",
         voidedAt: new Date(),
         version: { increment: 1 },
+        ...prepareLedgerFields("VOID"),
       },
     });
     if (updated.count !== 1) {
       throw new Error(`bet_version_mismatch: ${ref.bet.id}`);
     }
+
+    await tx.betStateTransition.create({
+      data: {
+        betId: ref.bet.id,
+        fromStatus: ref.bet.status,
+        toStatus: "VOID",
+        actorType: "SYSTEM_EXTERNAL_RESOLVE",
+        actorId: null,
+        metadata: {
+          reason,
+          externalRefId: ref.id,
+        },
+      },
+    });
 
     await tx.betExternalRef.update({
       where: { id: ref.id },
@@ -287,6 +329,15 @@ async function commitVoid(params: {
 
     logger.info({ betId: ref.bet.id, reason }, "resolve-bets: voided");
   });
+
+  try {
+    await finalizeLedgerForBet(ref.bet.id, "external-resolve-void");
+  } catch (err) {
+    logger.error(
+      { betId: ref.bet.id, err: err instanceof Error ? err.message : String(err) },
+      "ledger finalize failed for void — will retry via cron",
+    );
+  }
 }
 
 async function escalateToManual(ref: RefWithBet, reason: string): Promise<void> {
