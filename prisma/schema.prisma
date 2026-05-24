@@ -785,11 +785,13 @@ model BetExternalRef {
   eventEndsAt   DateTime @map("event_ends_at")
 
   // Processing state
-  processedAt DateTime? @map("processed_at")
-  resolvedAt  DateTime? @map("resolved_at")
-  failedAt    DateTime? @map("failed_at")
-  retryCount  Int       @default(0) @map("retry_count")
-  lastError   String?   @map("last_error")
+  processedAt   DateTime? @map("processed_at")
+  resolvedAt    DateTime? @map("resolved_at")
+  failedAt      DateTime? @map("failed_at")
+  retryCount    Int       @default(0) @map("retry_count")
+  lastError     String?   @map("last_error")
+  nextRetryAt   DateTime? @map("next_retry_at")
+  lastAttemptAt DateTime? @map("last_attempt_at")
 
   // Resolution outcome (cached zodat we backend kunnen reconstrueren)
   resolvedWinnerSide String? @map("resolved_winner_side")
@@ -803,6 +805,7 @@ model BetExternalRef {
   @@index([provider, eventEndsAt], map: "idx_bet_external_refs_provider_ends")
   @@index([eventEndsAt], map: "idx_bet_external_refs_ends")
   @@index([processedAt], map: "idx_bet_external_refs_processed")
+  @@index([nextRetryAt, processedAt], map: "idx_bet_external_refs_next_retry")
   @@map("bet_external_refs")
 }
 
