@@ -150,6 +150,15 @@ enum ConfirmationDecision {
   DISAGREE
 }
 
+enum LedgerSettlementStatus {
+  NOT_REQUIRED
+  PENDING
+  PROCESSING
+  FINALIZED
+  FAILED
+  FAILED_TERMINAL
+}
+
 // ── MODELS ─────────────────────────────────────────────────────────────────
 
 model User {
@@ -391,6 +400,18 @@ model Bet {
   category   String?
   isCustom   Boolean @default(false) @map("is_custom")
 
+  // G.1: Ledger finalizer state machine (Wager pattern)
+  ledgerStatus         LedgerSettlementStatus @default(NOT_REQUIRED) @map("ledger_status")
+  ledgerOutcome        String?                @map("ledger_outcome")
+  ledgerTargetWinnerId String?                @map("ledger_target_winner_id")
+  ledgerFinalizedAt    DateTime?              @map("ledger_finalized_at")
+  ledgerLastError      String?                @map("ledger_last_error")
+  ledgerErrorCode      String?                @map("ledger_error_code")
+  ledgerRetryCount     Int                    @default(0) @map("ledger_retry_count")
+  ledgerNextRetryAt    DateTime?              @map("ledger_next_retry_at")
+  ledgerProcessingAt   DateTime?              @map("ledger_processing_at")
+  ledgerProcessingBy   String?                @map("ledger_processing_by")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -417,6 +438,8 @@ model Bet {
   @@index([status, createdAt(sort: Desc)], map: "idx_bets_status_created_at")
   @@index([category, status, createdAt(sort: Desc)], map: "idx_bets_category_status_created_at")
   @@index([templateId], map: "idx_bets_template_id")
+  @@index([ledgerStatus, ledgerNextRetryAt], map: "idx_bets_ledger_retry")
+  @@index([status, ledgerStatus], map: "idx_bets_status_ledger")
   @@map("bets")
 }
 
