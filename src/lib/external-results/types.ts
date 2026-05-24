@@ -185,3 +185,19 @@ export async function providerFetch(
     );
   }
 }
+
+// ─── Per-sport event durations ────────────────────────────────────────────
+// Used by event-search-picker (frontend, sets eventEndsAt at bet creation)
+// AND by ESPN provider (backend, fallback when scoreboard search lacks endsAt).
+//
+// Values are upper-bound estimates — event almost certainly concluded by then.
+// Exponential backoff retry (p63 prompt 3) handles edge cases beyond these.
+export const DURATION_BY_SPORT_MS: Record<SupportedSport, number> = {
+  football:          150 * 60 * 1000,  // 2.5h  — 90min + halftime + ET + buffer
+  basketball:        150 * 60 * 1000,  // 2.5h  — 4x12min + halftime + OT
+  american_football: 210 * 60 * 1000,  // 3.5h  — 4x15min + halftime + OT
+  ice_hockey:        165 * 60 * 1000,  // 2.75h — 3x20min + intermissions + OT
+  baseball:          210 * 60 * 1000,  // 3.5h  — no clock, extra innings
+  tennis:            240 * 60 * 1000,  // 4h    — best-of-5 can run long
+  mma:               120 * 60 * 1000,  // 2h    — 3-5 rounds + prelims
+};

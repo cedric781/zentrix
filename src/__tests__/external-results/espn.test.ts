@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseEspnResponse } from "@/lib/external-results/providers/espn";
+import { DURATION_BY_SPORT_MS } from "@/lib/external-results/types";
+import type { SupportedSport } from "@/lib/api/types";
 
 describe("parseEspnResponse", () => {
   it("returns completed for finished match with scores", () => {
@@ -99,5 +101,35 @@ describe("parseEspnResponse", () => {
         ],
       }),
     ).toThrow(/team names/);
+  });
+});
+
+describe("DURATION_BY_SPORT_MS — per-sport coverage", () => {
+  it("covers all 7 SupportedSport values", () => {
+    const allSports: SupportedSport[] = [
+      "football", "basketball", "american_football", "ice_hockey",
+      "baseball", "tennis", "mma",
+    ];
+    for (const sport of allSports) {
+      expect(DURATION_BY_SPORT_MS[sport]).toBeGreaterThan(0);
+    }
+  });
+
+  it("football duration is between 2h and 3h (sanity)", () => {
+    const ms = DURATION_BY_SPORT_MS.football;
+    expect(ms).toBeGreaterThanOrEqual(2 * 60 * 60 * 1000);
+    expect(ms).toBeLessThanOrEqual(3 * 60 * 60 * 1000);
+  });
+
+  it("tennis duration is longer than football (best-of-5)", () => {
+    expect(DURATION_BY_SPORT_MS.tennis).toBeGreaterThan(DURATION_BY_SPORT_MS.football);
+  });
+
+  it("mma is shortest (2h)", () => {
+    const mma = DURATION_BY_SPORT_MS.mma;
+    const others: SupportedSport[] = ["football", "basketball", "american_football", "ice_hockey", "baseball", "tennis"];
+    for (const sport of others) {
+      expect(DURATION_BY_SPORT_MS[sport]).toBeGreaterThanOrEqual(mma);
+    }
   });
 });

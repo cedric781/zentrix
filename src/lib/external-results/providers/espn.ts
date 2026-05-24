@@ -5,7 +5,7 @@ import type {
   SearchEventsParams,
   ExternalEventSummary,
 } from "../types";
-import { providerFetch, ProviderError } from "../types";
+import { providerFetch, ProviderError, DURATION_BY_SPORT_MS } from "../types";
 import type { SupportedSport } from "@/lib/api/types";
 
 /**
@@ -57,7 +57,7 @@ const SEARCH_TIMEOUT_MS = 8000;
 const SCOREBOARD_LOOKAHEAD_DAYS = 14;
 const SEARCH_RESULT_LIMIT = 10;
 const SEARCH_API_PER_QUERY_LIMIT = 8;
-const DEFAULT_DURATION_HOURS = 4;
+
 
 type EspnScoreboardListResponse = {
   events?: Array<{
@@ -246,7 +246,7 @@ export class EspnProvider implements ExternalResultProvider {
           : subtitle;
         const startsAt = item.date ? new Date(item.date) : new Date();
         const endsAt = new Date(
-          startsAt.getTime() + DEFAULT_DURATION_HOURS * 60 * 60 * 1000,
+          startsAt.getTime() + DURATION_BY_SPORT_MS[sport],
         );
 
         events.push({
