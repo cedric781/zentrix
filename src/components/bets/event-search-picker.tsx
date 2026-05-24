@@ -39,6 +39,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useEventSearch } from "@/hooks/use-event-search";
 import type { CreateBetExternalRef, SupportedSport } from "@/lib/api/types";
 import type { ExternalEventSummary } from "@/lib/api/external-results";
+import { DURATION_BY_SPORT_MS } from "@/lib/external-results/types";
 
 const SPORT_LABELS: Record<SupportedSport, string> = {
   football: "Football",
@@ -62,9 +63,6 @@ const SPORTS_FOR_CATEGORY: Record<string, SupportedSport[]> = {
   Combat: ["mma"],
 };
 
-// MVP default: most single matches resolve within 4 hours. Caller may
-// post-edit via the bet-form; manual picker is also available.
-const DEFAULT_DURATION_MS = 4 * 60 * 60 * 1000;
 
 type Props = {
   category: string;
@@ -100,7 +98,7 @@ export function EventSearchPicker({
     const starts = new Date(event.startsAt);
     const ends = event.endsAt
       ? new Date(event.endsAt)
-      : new Date(starts.getTime() + DEFAULT_DURATION_MS);
+      : new Date(starts.getTime() + DURATION_BY_SPORT_MS[event.sport]);
     onChange({
       provider: event.provider,
       eventId: event.providerEventId,

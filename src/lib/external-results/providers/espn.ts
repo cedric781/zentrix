@@ -5,7 +5,7 @@ import type {
   SearchEventsParams,
   ExternalEventSummary,
 } from "../types";
-import { providerFetch, ProviderError } from "../types";
+import { providerFetch, ProviderError, DURATION_BY_SPORT_MS } from "../types";
 import type { SupportedSport } from "@/lib/api/types";
 
 /**
@@ -57,7 +57,7 @@ const SEARCH_TIMEOUT_MS = 8000;
 const SCOREBOARD_LOOKAHEAD_DAYS = 14;
 const SEARCH_RESULT_LIMIT = 10;
 const SEARCH_API_PER_QUERY_LIMIT = 8;
-const DEFAULT_DURATION_HOURS = 4;
+
 
 type EspnScoreboardListResponse = {
   events?: Array<{
@@ -246,7 +246,7 @@ export class EspnProvider implements ExternalResultProvider {
           : subtitle;
         const startsAt = item.date ? new Date(item.date) : new Date();
         const endsAt = new Date(
-          startsAt.getTime() + DEFAULT_DURATION_HOURS * 60 * 60 * 1000,
+          startsAt.getTime() + DURATION_BY_SPORT_MS[sport],
         );
 
         events.push({
@@ -434,6 +434,12 @@ export function parseEspnResponse(data: EspnEventResponse): ExternalEventResult 
         "PARSE_ERROR",
         "ESPN response has non-numeric score",
       );
+    }
+
+    // P63: CDN propagation lag — ESPN sometimes reports completed=true
+    // while scores are still 0-0. Treat as in_progress so cron reschedules.
+    if (homeScore === 0 && awayScore === 0) {
+      return { kind: "in_progress" };
     }
 
     const finishedAtStr = comp.date ?? data.date;

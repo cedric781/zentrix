@@ -15,6 +15,16 @@ import type { SupportedSport } from "@/lib/api/types";
 
 const BATCH_SIZE = 50;
 const MAX_RETRIES = 5;
+const BACKOFF_MIN_MS = 60_000;
+const BACKOFF_MAX_MS = 60 * 60_000;
+
+export function computeNextRetryAt(retryCount: number): Date {
+  const delayMs = Math.min(
+    BACKOFF_MIN_MS * Math.pow(2, retryCount),
+    BACKOFF_MAX_MS,
+  );
+  return new Date(Date.now() + delayMs);
+}
 
 export type ResolveBatchStats = {
   total: number;
@@ -54,6 +64,10 @@ export async function resolveBetsBatch(): Promise<ResolveBatchStats> {
       processedAt: null,
       failedAt: null,
       resolvedAt: null,
+      OR: [
+        { nextRetryAt: null },
+        { nextRetryAt: { lte: now } },
+      ],
       bet: {
         status: { in: ["ACTIVE", "RESULT_PROPOSED", "AWAITING_CONFIRMATION"] },
       },
@@ -175,11 +189,14 @@ async function handleFetchFailure(ref: RefWithBet, err: unknown): Promise<Outcom
     return "escalated";
   }
 
+  const _nextRetryAt = computeNextRetryAt(ref.retryCount);
   await prisma.betExternalRef.update({
     where: { id: ref.id },
     data: {
       retryCount: { increment: 1 },
       lastError: message.slice(0, 1000),
+      nextRetryAt: _nextRetryAt,
+      lastAttemptAt: new Date(),
     },
   });
 
@@ -195,11 +212,14 @@ async function scheduleRetry(ref: RefWithBet, reason: string): Promise<Outcome> 
     await commitVoid({ ref, reason: `${reason}_max_retries`, rawResult: null });
     return "voided";
   }
+  const _nextRetryAt = computeNextRetryAt(ref.retryCount);
   await prisma.betExternalRef.update({
     where: { id: ref.id },
     data: {
       retryCount: { increment: 1 },
       lastError: reason,
+      nextRetryAt: _nextRetryAt,
+      lastAttemptAt: new Date(),
     },
   });
   return "skipped";
