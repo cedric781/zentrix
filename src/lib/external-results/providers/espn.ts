@@ -436,6 +436,12 @@ export function parseEspnResponse(data: EspnEventResponse): ExternalEventResult 
       );
     }
 
+    // P63: CDN propagation lag — ESPN sometimes reports completed=true
+    // while scores are still 0-0. Treat as in_progress so cron reschedules.
+    if (homeScore === 0 && awayScore === 0) {
+      return { kind: "in_progress" };
+    }
+
     const finishedAtStr = comp.date ?? data.date;
     const finishedAt = finishedAtStr ? new Date(finishedAtStr) : new Date();
 
