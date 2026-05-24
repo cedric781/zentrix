@@ -17,6 +17,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/ledger-retry",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/cleanup-stale",
       "schedule": "*/15 * * * *"
     },
