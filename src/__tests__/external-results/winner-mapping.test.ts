@@ -164,3 +164,47 @@ describe("mapWinner", () => {
     if (r.kind === "resolved") expect(r.matchedTeam).toBe("manchester united");
   });
 });
+
+describe("normalizeTeamName — Premier League coverage", () => {
+  // ESPN's officiële display names (verified 24 mei 2026)
+  const PREMIER_LEAGUE_TEAMS_ESPN = [
+    "Manchester United",
+    "Manchester City",
+    "Liverpool",
+    "Chelsea",
+    "Arsenal",
+    "Tottenham Hotspur",
+    "Newcastle United",
+    "West Ham United",
+    "Aston Villa",
+    "Brighton & Hove Albion",
+    "Crystal Palace",
+    "Fulham",
+    "Wolverhampton Wanderers",
+    "Burnley",
+    "Brentford",
+    "Nottingham Forest",
+    "AFC Bournemouth",
+    "Sunderland",
+    "Everton",
+    "Leeds United",
+  ];
+
+  it.each(PREMIER_LEAGUE_TEAMS_ESPN)("normalizes ESPN name '%s' to a canonical", (espnName) => {
+    const result = normalizeTeamName(espnName, "football");
+    expect(result).not.toBeNull();
+  });
+
+  it("sunderland regression — bet 151dcaa6 root cause", () => {
+    expect(normalizeTeamName("Sunderland", "football")).toBe("sunderland");
+  });
+
+  it("does not match basketball alias 'wolves' for football query", () => {
+    // wolves is alias of timberwolves (basketball) AND wolverhampton (football)
+    // Both sports independent — sport-scoping must work
+    const footballResult = normalizeTeamName("wolves", "football");
+    const basketballResult = normalizeTeamName("wolves", "basketball");
+    expect(footballResult).toBe("wolverhampton");
+    expect(basketballResult).toBe("timberwolves");
+  });
+});
