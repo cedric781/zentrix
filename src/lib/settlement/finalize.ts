@@ -11,6 +11,7 @@ import {
 } from "@/lib/ledger";
 import { getOrCreateBetEscrowAccount } from "@/lib/bets/escrow";
 import { LedgerFinalizerError } from "./errors";
+import type { BetStatus } from "@prisma/client";
 import type { LedgerOutcome } from "./prepare";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ interface FinalizationResult {
  *   L1: Claim guard (updateMany — only one caller wins)
  *   L2: ledgerFinalizedAt check (already done → early return)
  *   L3: recordTransaction idempotency key (ledger-finalize:{betId})
+ *   L4: Snapshot re-verify inside $transaction (defends against mid-finalize drift)
  *
  * Call AFTER the transaction that set prepareLedgerFields() has committed.
  */
@@ -44,9 +46,9 @@ export async function finalizeLedgerForBet(
   betId: string,
   reason: string = "inline",
 ): Promise<FinalizationResult> {
-  // ── Step 1: Claim ─────────────────────────────────────────────────────
-  const claimed = await claimBetForFinalization(betId, reason);
-  if (!claimed) {
+  // ── Step 1: Claim + snapshot ──────────────────────────────────────────
+  const claim = await claimBetForFinalization(betId, reason);
+  if (!claim) {
     return { success: false, betId, outcome: null, ledgerTxId: null };
   }
 
@@ -61,7 +63,6 @@ export async function finalizeLedgerForBet(
       opponentUserId: true,
       winnerId: true,
       ledgerStatus: true,
-      ledgerOutcome: true,
       ledgerTargetWinnerId: true,
       ledgerFinalizedAt: true,
       ledgerRetryCount: true,
@@ -76,29 +77,23 @@ export async function finalizeLedgerForBet(
   // ── Step 3: Already finalized (convergent recovery) ───────────────────
   if (bet.ledgerFinalizedAt) {
     await markLedgerFinalized(betId, null);
-    return { success: true, betId, outcome: bet.ledgerOutcome as LedgerOutcome, ledgerTxId: null };
-  }
-
-  const outcome = bet.ledgerOutcome as LedgerOutcome | null;
-  if (!outcome || (outcome !== "SETTLE" && outcome !== "VOID")) {
-    await markLedgerFailed(betId, "LEDGER_OUTCOME_MISMATCH", `Invalid ledgerOutcome: ${outcome}`, true);
-    return { success: false, betId, outcome, ledgerTxId: null, error: `Invalid outcome: ${outcome}` };
+    return { success: true, betId, outcome: claim.outcome, ledgerTxId: null };
   }
 
   // ── Step 4: Pre-validation ────────────────────────────────────────────
-  const validationError = validatePreFinalize(bet, outcome);
+  const validationError = validatePreFinalize(bet, claim.outcome);
   if (validationError) {
     await markLedgerFailed(betId, "LEDGER_INVARIANT_VIOLATION", validationError, true);
-    return { success: false, betId, outcome, ledgerTxId: null, error: validationError };
+    return { success: false, betId, outcome: claim.outcome, ledgerTxId: null, error: validationError };
   }
 
   // ── Step 5: Execute ledger operation ──────────────────────────────────
   try {
-    const ledgerTxId = await executeLedgerFinalization(bet, outcome);
+    const ledgerTxId = await executeLedgerFinalization(bet, claim);
     await markLedgerFinalized(betId, ledgerTxId);
 
-    logger.info({ betId, outcome, ledgerTxId, reason }, "ledger-finalize: success");
-    return { success: true, betId, outcome, ledgerTxId };
+    logger.info({ betId, outcome: claim.outcome, ledgerTxId, reason }, "ledger-finalize: success");
+    return { success: true, betId, outcome: claim.outcome, ledgerTxId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isTerminal = isTerminalError(err);
@@ -106,16 +101,19 @@ export async function finalizeLedgerForBet(
     await markLedgerFailed(betId, "LEDGER_SETTLEMENT_FAILED", message, isTerminal);
 
     logger.error(
-      { betId, outcome, reason, error: message, isTerminal, retryCount: bet.ledgerRetryCount },
+      { betId, outcome: claim.outcome, reason, error: message, isTerminal, retryCount: bet.ledgerRetryCount },
       "ledger-finalize: failed",
     );
-    return { success: false, betId, outcome, ledgerTxId: null, error: message };
+    return { success: false, betId, outcome: claim.outcome, ledgerTxId: null, error: message };
   }
 }
 
 // ─── Claim Logic ────────────────────────────────────────────────────────────
 
-async function claimBetForFinalization(betId: string, workerId: string): Promise<boolean> {
+async function claimBetForFinalization(
+  betId: string,
+  workerId: string,
+): Promise<{ outcome: LedgerOutcome; targetWinnerId: string | null } | null> {
   const staleCutoff = new Date(Date.now() - STALE_LOCK_MS);
 
   const claimed = await prisma.bet.updateMany({
@@ -123,7 +121,13 @@ async function claimBetForFinalization(betId: string, workerId: string): Promise
       id: betId,
       OR: [
         { ledgerStatus: "PENDING" },
-        { ledgerStatus: "FAILED" },
+        {
+          ledgerStatus: "FAILED",
+          OR: [
+            { ledgerNextRetryAt: null },
+            { ledgerNextRetryAt: { lte: new Date() } },
+          ],
+        },
         {
           ledgerStatus: "PROCESSING",
           ledgerProcessingAt: { lt: staleCutoff },
@@ -138,7 +142,19 @@ async function claimBetForFinalization(betId: string, workerId: string): Promise
     },
   });
 
-  return claimed.count > 0;
+  if (claimed.count === 0) return null;
+
+  const snapshot = await prisma.bet.findUnique({
+    where: { id: betId },
+    select: { ledgerOutcome: true, ledgerTargetWinnerId: true },
+  });
+  if (!snapshot || !snapshot.ledgerOutcome) return null;
+  if (snapshot.ledgerOutcome !== "SETTLE" && snapshot.ledgerOutcome !== "VOID") return null;
+
+  return {
+    outcome: snapshot.ledgerOutcome as LedgerOutcome,
+    targetWinnerId: snapshot.ledgerTargetWinnerId,
+  };
 }
 
 // ─── Mark Helpers ───────────────────────────────────────────────────────────
@@ -190,20 +206,38 @@ async function markLedgerFailed(
 async function executeLedgerFinalization(
   bet: {
     id: string;
+    status: BetStatus;
     stakeUnits: bigint;
     createdById: string;
     opponentUserId: string | null;
-    ledgerTargetWinnerId: string | null;
   },
-  outcome: LedgerOutcome,
+  snapshot: { outcome: LedgerOutcome; targetWinnerId: string | null },
 ): Promise<string> {
   const idempotencyKey = `ledger-finalize:${bet.id}`;
 
   const result = await prisma.$transaction(async (tx) => {
-    const escrowAcct = await getOrCreateBetEscrowAccount(tx, bet.id);
+    const current = await tx.bet.findUnique({
+      where: { id: bet.id },
+      select: { ledgerOutcome: true, ledgerTargetWinnerId: true },
+    });
+    if (!current || current.ledgerOutcome !== snapshot.outcome) {
+      throw new LedgerFinalizerError(
+        "LEDGER_OUTCOME_MISMATCH",
+        `ledgerOutcome drifted: snapshot=${snapshot.outcome} current=${current?.ledgerOutcome}`,
+      );
+    }
+    if (snapshot.outcome === "SETTLE" && current.ledgerTargetWinnerId !== snapshot.targetWinnerId) {
+      throw new LedgerFinalizerError(
+        "LEDGER_OUTCOME_MISMATCH",
+        `ledgerTargetWinnerId drifted during finalize`,
+      );
+    }
 
-    if (outcome === "SETTLE") {
-      const winnerId = bet.ledgerTargetWinnerId!;
+    const escrowAcct = await getOrCreateBetEscrowAccount(tx, bet.id);
+    let ledgerTx;
+
+    if (snapshot.outcome === "SETTLE") {
+      const winnerId = snapshot.targetWinnerId!;
       const potUnits = bet.stakeUnits * 2n;
       const feeUnits = applyBps(potUnits, FEES.PLATFORM_BPS);
       const winnerPayout = potUnits - feeUnits;
@@ -211,7 +245,7 @@ async function executeLedgerFinalization(
       const winnerAcct = await getUserAccount(tx, winnerId);
       const treasuryAcct = await getTreasuryAccount(tx);
 
-      return recordTransaction({
+      ledgerTx = await recordTransaction({
         tx,
         idempotencyKey,
         description: `Ledger finalize settle (bet=${bet.id})`,
@@ -236,35 +270,55 @@ async function executeLedgerFinalization(
         ],
       });
     } else {
-      // VOID: refund both participants
       const creatorAcct = await getUserAccount(tx, bet.createdById);
-      const opponentAcct = await getUserAccount(tx, bet.opponentUserId!);
 
-      return recordTransaction({
+      const lines = [
+        {
+          debitAccountId: escrowAcct.id,
+          creditAccountId: creatorAcct.id,
+          amountUnits: bet.stakeUnits,
+          entryType: "ESCROW_RELEASE" as const,
+          note: `ledger-finalize-void:${bet.id}:creator`,
+        },
+      ];
+
+      if (bet.opponentUserId) {
+        const opponentAcct = await getUserAccount(tx, bet.opponentUserId);
+        lines.push({
+          debitAccountId: escrowAcct.id,
+          creditAccountId: opponentAcct.id,
+          amountUnits: bet.stakeUnits,
+          entryType: "ESCROW_RELEASE" as const,
+          note: `ledger-finalize-void:${bet.id}:opponent`,
+        });
+      }
+
+      ledgerTx = await recordTransaction({
         tx,
         idempotencyKey,
         description: `Ledger finalize void (bet=${bet.id})`,
         initiatorUserId: bet.createdById,
         refType: "bet",
         refId: bet.id,
-        lines: [
-          {
-            debitAccountId: escrowAcct.id,
-            creditAccountId: creatorAcct.id,
-            amountUnits: bet.stakeUnits,
-            entryType: "ESCROW_RELEASE",
-            note: `ledger-finalize-void:${bet.id}:creator`,
-          },
-          {
-            debitAccountId: escrowAcct.id,
-            creditAccountId: opponentAcct.id,
-            amountUnits: bet.stakeUnits,
-            entryType: "ESCROW_RELEASE",
-            note: `ledger-finalize-void:${bet.id}:opponent`,
-          },
-        ],
+        lines,
       });
     }
+
+    await tx.betStateTransition.create({
+      data: {
+        betId: bet.id,
+        fromStatus: bet.status,
+        toStatus: bet.status,
+        actorType: "SYSTEM_LEDGER_FINALIZER",
+        actorId: null,
+        metadata: {
+          outcome: snapshot.outcome,
+          ledgerTxId: ledgerTx.transaction.id,
+        },
+      },
+    });
+
+    return ledgerTx;
   }, { timeout: 30_000, maxWait: 10_000 });
 
   return result.transaction.id;
@@ -276,6 +330,7 @@ function validatePreFinalize(
   bet: {
     stakeUnits: bigint;
     opponentUserId: string | null;
+    winnerId: string | null;
     ledgerTargetWinnerId: string | null;
     createdById: string;
   },
@@ -292,11 +347,8 @@ function validatePreFinalize(
     if (bet.ledgerTargetWinnerId !== bet.createdById && bet.ledgerTargetWinnerId !== bet.opponentUserId) {
       return `ledgerTargetWinnerId ${bet.ledgerTargetWinnerId} is not a participant`;
     }
-  }
-
-  if (outcome === "VOID") {
-    if (!bet.opponentUserId) {
-      return "VOID outcome requires opponentUserId (both sides must be refunded)";
+    if (bet.winnerId && bet.winnerId !== bet.ledgerTargetWinnerId) {
+      return `winnerId ${bet.winnerId} disagrees with ledgerTargetWinnerId ${bet.ledgerTargetWinnerId}`;
     }
   }
 
@@ -312,7 +364,6 @@ function isTerminalError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message.toLowerCase() : "";
   if (msg.includes("not a participant")) return true;
   if (msg.includes("requires ledgertargetwinnerid")) return true;
-  if (msg.includes("requires opponentuserid")) return true;
   if (msg.includes("invalid stakeunits")) return true;
 
   // Transient — retry
