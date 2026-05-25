@@ -455,6 +455,8 @@ model Bet {
   escrowDepositProcessingAt  DateTime?             @map("escrow_deposit_processing_at")
   escrowDepositProcessingBy  String?               @map("escrow_deposit_processing_by")
 
+  idempotencyKey             String?               @unique @map("idempotency_key")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

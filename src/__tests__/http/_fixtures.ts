@@ -68,6 +68,7 @@ export function mockBet(overrides: Partial<Bet> = {}): Bet {
     escrowDepositNextRetryAt: null,
     escrowDepositProcessingAt: null,
     escrowDepositProcessingBy: null,
+    idempotencyKey: null,
     createdAt: T0,
     updatedAt: T0,
     ...overrides,

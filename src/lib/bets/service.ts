@@ -6,6 +6,8 @@ import {
   recordTransaction,
   getUserAccount,
   lockAccount,
+  reserveBalance,
+  ReservationError,
   type TxClient,
 } from "@/lib/ledger";
 import { getEnv } from "@/lib/env";
@@ -221,25 +223,16 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
   const inviteToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = computeTokenHash(inviteToken);
   const expiresAt = new Date(Date.now() + expiresInHours * 3600 * 1000);
-  const ledgerKey = `bet-create:${idempotencyKey}`;
-
   return await prisma.$transaction(async (tx) => {
-    // a. Idempotency short-circuit.
-    const existingTx = await tx.ledgerTransaction.findUnique({
-      where: { idempotencyKey: ledgerKey },
+    // a. Idempotency: Bet.idempotencyKey unique constraint.
+    const existingBet = await tx.bet.findUnique({
+      where: { idempotencyKey },
     });
-    if (existingTx) {
-      if (!existingTx.refId) {
-        throw new Error(`Idempotent ledger tx ${existingTx.id} has no refId`);
-      }
-      const replayedBet = await tx.bet.findUnique({ where: { id: existingTx.refId } });
-      if (!replayedBet) {
-        throw new Error(`Idempotency key bound to missing bet ${existingTx.refId}`);
-      }
-      return { bet: replayedBet, inviteToken: null };
+    if (existingBet) {
+      return { bet: existingBet, inviteToken: null };
     }
 
-    // b. Pool / match async validation.
+    // b. Pool / match validation.
     if (poolId) {
       const pool = await tx.pool.findUnique({ where: { id: poolId } });
       if (!pool) {
@@ -259,7 +252,6 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
           409,
         );
       }
-      // c. Pool creator pre-check (defense-in-depth voor trigger).
       if (pool.createdById === creatorId) {
         throw new BetError(
           "BET_CREATOR_BETTING_OWN_POOL",
@@ -282,18 +274,22 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
       }
     }
 
-    // d. Lock creator account + balance check.
+    // c. Reserve balance (atomic pre-flight — no ledger entry yet).
     const userAcct = await getUserAccount(tx, creatorId);
-    const locked = await lockAccount(tx, userAcct.id);
-    if (locked.balanceUnits < stakeUnits) {
-      throw new BetError(
-        "BET_INSUFFICIENT_BALANCE",
-        `Need ${stakeUnits} units, have ${locked.balanceUnits}`,
-        402,
-      );
+    try {
+      await reserveBalance(tx, userAcct.id, stakeUnits);
+    } catch (err) {
+      if (err instanceof ReservationError && err.code === "INSUFFICIENT_AVAILABLE") {
+        throw new BetError(
+          "BET_INSUFFICIENT_BALANCE",
+          `Need ${stakeUnits} units, insufficient available balance`,
+          402,
+        );
+      }
+      throw err;
     }
 
-    // e. Insert Bet (DRAFT). Trigger may fire if poolId set.
+    // d. Insert Bet (PENDING_ESCROW). Cron promotes to OPEN after chain confirm.
     let bet: Bet;
     try {
       bet = await tx.bet.create({
@@ -302,7 +298,7 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
           createdById: creatorId,
           creatorSide,
           stakeUnits,
-          status: "DRAFT",
+          status: "PENDING_ESCROW",
           settlementMode: "PROOF_CONFIRM",
           resultStatus: "PENDING",
           version: 0,
@@ -315,6 +311,9 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
           templateId: input.templateId ?? null,
           category: input.category ?? null,
           isCustom: input.isCustom ?? false,
+          escrowDepositStatus: "PENDING_CREATOR",
+          escrowCreatorAttemptedAt: new Date(),
+          idempotencyKey,
         },
       });
     } catch (e) {
@@ -328,52 +327,13 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
       throw e;
     }
 
-    // f. Get/create escrow account.
-    const escrowAcct = await getOrCreateBetEscrowAccount(tx, bet.id);
-
-    // g. recordTransaction: creator hold.
-    const ledgerResult = await recordTransaction({
-      tx,
-      idempotencyKey: ledgerKey,
-      description: `Bet creator hold (bet=${bet.id})`,
-      initiatorUserId: creatorId,
-      refType: "bet",
-      refId: bet.id,
-      lines: [
-        {
-          debitAccountId: userAcct.id,
-          creditAccountId: escrowAcct.id,
-          amountUnits: stakeUnits,
-          entryType: "ESCROW_LOCK",
-          note: `bet-hold:${bet.id}:creator`,
-        },
-      ],
-    });
-
-    // h. Insert participant + invite.
+    // e. Insert participant + invite.
     await tx.betParticipant.create({
       data: { betId: bet.id, userId: creatorId, side: creatorSide },
     });
     await tx.betInvite.create({
       data: { betId: bet.id, tokenHash, expiresAt },
     });
-
-    // i. Promote DRAFT → OPEN with version-guard.
-    const updated = await tx.bet.updateMany({
-      where: { id: bet.id, version: 0, status: "DRAFT" },
-      data: {
-        status: "OPEN",
-        version: 1,
-        createdByLedgerTxId: ledgerResult.transaction.id,
-      },
-    });
-    if (updated.count !== 1) {
-      throw new BetError(
-        "BET_VERSION_MISMATCH",
-        `Bet ${bet.id} concurrently mutated`,
-        409,
-      );
-    }
 
     if (input.externalRef) {
       await tx.betExternalRef.create({
@@ -389,15 +349,14 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
       });
     }
 
-    // j. Audit transition.
+    // f. Audit transition.
     await tx.betStateTransition.create({
       data: {
         betId: bet.id,
         fromStatus: "DRAFT",
-        toStatus: "OPEN",
+        toStatus: "PENDING_ESCROW",
         actorId: creatorId,
         actorType: "USER",
-        metadata: { ledgerTxId: ledgerResult.transaction.id },
       },
     });
 
