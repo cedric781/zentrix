@@ -159,6 +159,14 @@ enum LedgerSettlementStatus {
   FAILED_TERMINAL
 }
 
+enum OnChainPayoutStatus {
+  PENDING
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  FAILED_TERMINAL
+}
+
 // ── MODELS ─────────────────────────────────────────────────────────────────
 
 model User {
@@ -412,6 +420,18 @@ model Bet {
   ledgerProcessingAt   DateTime?              @map("ledger_processing_at")
   ledgerProcessingBy   String?                @map("ledger_processing_by")
 
+  // H.4: On-chain payout tracking
+  onChainPayoutStatus  OnChainPayoutStatus?   @map("on_chain_payout_status")
+  payoutWinnerTxSig    String?                @map("payout_winner_tx_sig")
+  payoutFeeTxSig       String?                @map("payout_fee_tx_sig")
+  payoutAttemptedAt    DateTime?              @map("payout_attempted_at")
+  payoutConfirmedAt    DateTime?              @map("payout_confirmed_at")
+  payoutLastError      String?                @map("payout_last_error")
+  payoutRetryCount     Int                    @default(0) @map("payout_retry_count")
+  payoutNextRetryAt    DateTime?              @map("payout_next_retry_at")
+  payoutProcessingAt   DateTime?              @map("payout_processing_at")
+  payoutProcessingBy   String?                @map("payout_processing_by")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -440,6 +460,7 @@ model Bet {
   @@index([templateId], map: "idx_bets_template_id")
   @@index([ledgerStatus, ledgerNextRetryAt], map: "idx_bets_ledger_retry")
   @@index([status, ledgerStatus], map: "idx_bets_status_ledger")
+  @@index([onChainPayoutStatus, payoutNextRetryAt], map: "idx_bets_payout_retry")
   @@map("bets")
 }
 
