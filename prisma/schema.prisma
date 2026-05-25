@@ -219,8 +219,9 @@ model FinancialAccount {
   accountType  AccountType @map("account_type")
   scopeKey     String      @unique @map("scope_key")
   userId       String?     @unique @map("user_id")
-  balanceUnits BigInt      @default(0) @map("balance_units")
-  label        String?
+  balanceUnits  BigInt      @default(0) @map("balance_units")
+  reservedUnits BigInt      @default(0) @map("reserved_units")
+  label         String?
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
