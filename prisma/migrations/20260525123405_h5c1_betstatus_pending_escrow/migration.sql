@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "BetStatus" ADD VALUE 'PENDING_ESCROW';
+

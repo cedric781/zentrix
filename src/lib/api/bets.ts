@@ -20,6 +20,7 @@ import type {
 /** All status values from prisma/schema.prisma `enum BetStatus`. */
 export type BetStatus =
   | "DRAFT"
+  | "PENDING_ESCROW"
   | "OPEN"
   | "ACTIVE"
   | "RESULT_PROPOSED"

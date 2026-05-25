@@ -3,6 +3,7 @@ import type { BetStatus } from "@/lib/api/bets";
 
 const LABELS: Record<BetStatus, string> = {
   DRAFT: "Concept",
+  PENDING_ESCROW: "Stakes vergrendelen...",
   OPEN: "Open",
   ACTIVE: "Actief",
   RESULT_PROPOSED: "Resultaat ingediend",
@@ -18,6 +19,7 @@ type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
 const VARIANTS: Record<BetStatus, BadgeVariant> = {
   DRAFT: "outline",
+  PENDING_ESCROW: "secondary",
   OPEN: "default",
   ACTIVE: "default",
   RESULT_PROPOSED: "secondary",

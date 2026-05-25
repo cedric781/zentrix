@@ -14,6 +14,12 @@ export const BET_STATUS_CONFIG: Record<BetStatus, StatusConfig> = {
     variant: "outline",
     tone: "neutral",
   },
+  PENDING_ESCROW: {
+    label: "Locking Stakes",
+    description: "On-chain stake deposit in progress. Please wait.",
+    variant: "secondary",
+    tone: "warning",
+  },
   OPEN: {
     label: "Open",
     description: "Waiting for an opponent to accept this bet.",
