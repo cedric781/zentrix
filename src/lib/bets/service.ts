@@ -20,6 +20,20 @@ import { logger } from "@/lib/logger";
 
 export { expireOpenBet, autoVoidProposedBet } from "./expire";
 
+async function requireWalletDelegated(userId: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { walletDelegatedAt: true },
+  });
+  if (!user?.walletDelegatedAt) {
+    throw new BetError(
+      "BET_WALLET_NOT_DELEGATED",
+      "Wallet authorization required before placing bets. Open your wallet settings to authorize.",
+      403,
+    );
+  }
+}
+
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface CreateBetInput {
@@ -199,7 +213,10 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
     );
   }
 
-  // 2. Generate ids + token before tx.
+  // 2. Wallet delegation gate — must authorize before betting.
+  await requireWalletDelegated(creatorId);
+
+  // 3. Generate ids + token before tx.
   const betId = crypto.randomUUID();
   const inviteToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = computeTokenHash(inviteToken);
@@ -401,6 +418,8 @@ export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult>
 
   const tokenHash = computeTokenHash(inviteToken);
   const ledgerKey = `bet-accept:${idempotencyKey}`;
+
+  await requireWalletDelegated(opponentUserId);
 
   return await prisma.$transaction(async (tx) => {
     // 1. Idempotency short-circuit.

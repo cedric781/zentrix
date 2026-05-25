@@ -20,7 +20,8 @@ export type BetErrorCode =
   | "BET_POOL_MATCH_NOT_OPEN"
   | "BET_NOT_EXPIRED"
   | "BET_NOT_VOIDED"
-  | "BET_NO_OPPONENT";
+  | "BET_NO_OPPONENT"
+  | "BET_WALLET_NOT_DELEGATED";
 
 export class BetError extends Error {
   constructor(
