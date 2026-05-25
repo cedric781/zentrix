@@ -167,6 +167,14 @@ enum OnChainPayoutStatus {
   FAILED_TERMINAL
 }
 
+enum EscrowDepositStatus {
+  PENDING_CREATOR
+  PENDING_OPPONENT
+  LOCKED
+  FAILED
+  FAILED_TERMINAL
+}
+
 // ── MODELS ─────────────────────────────────────────────────────────────────
 
 model User {
@@ -432,6 +440,19 @@ model Bet {
   payoutProcessingAt   DateTime?              @map("payout_processing_at")
   payoutProcessingBy   String?                @map("payout_processing_by")
 
+  // H.5b: Escrow deposit tracking (LOCK V2)
+  escrowDepositStatus        EscrowDepositStatus?  @map("escrow_deposit_status")
+  escrowDepositCreatorTxSig  String?               @map("escrow_deposit_creator_tx_sig")
+  escrowDepositOpponentTxSig String?               @map("escrow_deposit_opponent_tx_sig")
+  escrowCreatorAttemptedAt   DateTime?             @map("escrow_creator_attempted_at")
+  escrowOpponentAttemptedAt  DateTime?             @map("escrow_opponent_attempted_at")
+  escrowLockedAt             DateTime?             @map("escrow_locked_at")
+  escrowDepositLastError     String?               @map("escrow_deposit_last_error")
+  escrowDepositRetryCount    Int                   @default(0) @map("escrow_deposit_retry_count")
+  escrowDepositNextRetryAt   DateTime?             @map("escrow_deposit_next_retry_at")
+  escrowDepositProcessingAt  DateTime?             @map("escrow_deposit_processing_at")
+  escrowDepositProcessingBy  String?               @map("escrow_deposit_processing_by")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -461,6 +482,7 @@ model Bet {
   @@index([ledgerStatus, ledgerNextRetryAt], map: "idx_bets_ledger_retry")
   @@index([status, ledgerStatus], map: "idx_bets_status_ledger")
   @@index([onChainPayoutStatus, payoutNextRetryAt], map: "idx_bets_payout_retry")
+  @@index([escrowDepositStatus, escrowDepositNextRetryAt], map: "idx_bets_escrow_deposit_retry")
   @@map("bets")
 }
 
