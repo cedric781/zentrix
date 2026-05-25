@@ -18,3 +18,8 @@ export {
   type RecordTransactionInput,
 } from "./record";
 export { getUserBalance, type UserBalance } from "./balance";
+export {
+  reserveBalance,
+  releaseBalance,
+  ReservationError,
+} from "./reservations";
