@@ -17,6 +17,7 @@ const EnvSchema = z.object({
   HELIUS_WEBHOOK_ID: z.string().min(1).optional(),
   USDC_MINT_ADDRESS: z.string().min(32).max(44).optional(),
   FEE_WALLET_ADDRESS: z.string().min(32).max(44),
+  ESCROW_WALLET_ADDRESS: z.string().min(32).max(44),
   CRON_SECRET: z.string().min(32).optional(),
   DEPOSITS_DISABLED: z.coerce.boolean().default(false),
   WITHDRAWALS_DISABLED: z.coerce.boolean().default(false),

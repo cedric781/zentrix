@@ -73,6 +73,41 @@ model Bet {
 - Loading state in bet create (10-30s wait on-chain confirm)
 - H.2.5 delegation prompt redirect
 
+## Wallet Architecture Decision (H.5a)
+
+**Decision:** Use single Privy wallet (4ka77DDf...) for BOTH escrow and fee collection.
+
+**Address:** 4ka77DDfoiTBnPjAZ5CYSzJdWD7kKTESLAcvBcP271FH
+**Env vars:** ESCROW_WALLET_ADDRESS = FEE_WALLET_ADDRESS = same value
+
+**Risks accepted by project owner:**
+
+1. **Accounting complexity** — Wallet balance != active escrow amount.
+   At any moment, wallet contains: (active bet stakes) + (accumulated fees).
+   To know "how much fee revenue earned", MUST query DB:
+   ```sql
+   SELECT SUM(fee_units) FROM bets WHERE status='SETTLED';
+   ```
+   Cannot trust wallet balance for fee accounting.
+
+2. **Operator error risk** — Manual USDC withdraw from this wallet could
+   accidentally pull active escrow funds (= user money). MUST always check
+   DB before manual withdraw:
+   ```sql
+   SELECT SUM(stake_units * 2) FROM bets
+   WHERE status IN ('OPEN','ACTIVE','RESULT_PROPOSED','AWAITING_CONFIRMATION');
+   ```
+   Withdraw only (wallet_balance - active_escrow - safety_margin).
+
+3. **Audit difficulty** — On-chain observers (Solscan, etc) cannot
+   distinguish escrow vs fee. All looks like "platform funds" externally.
+
+4. **Future split** — If split into separate wallets later, requires
+   migration: drain old wallet, redistribute to new escrow + new fee.
+
+**Why accepted:** Project owner prefers single-wallet simplicity over
+operational separation. Acknowledged risk.
+
 ## Already Completed (Foundation)
 
 - H.2: Force delegation guard (bd83635)
