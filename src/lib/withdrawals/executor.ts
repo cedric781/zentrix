@@ -1,25 +1,12 @@
 import "server-only";
-import {
-  Transaction,
-  PublicKey,
-  TransactionInstruction,
-} from "@solana/web3.js";
-import {
-  getAssociatedTokenAddressSync,
-  createTransferCheckedInstruction,
-  createAssociatedTokenAccountInstruction,
-} from "@solana/spl-token";
 import { prisma } from "@/lib/prisma";
-import { getSolanaConnection } from "@/lib/solana/connection";
-import { parseSolanaAddress } from "@/lib/solana/address";
-import { getPrivyServerClient } from "@/lib/privy/server";
-import { getEnv } from "@/lib/env";
 import {
   recordTransaction,
   getUserAccount,
   getExternalAccount,
   type LedgerLine,
 } from "@/lib/ledger";
+import { transferUsdcOnChain, TransferUsdcError } from "@/lib/solana/transfer";
 import { logger } from "@/lib/logger";
 import { isCircuitOpen } from "@/lib/circuit-breaker";
 
@@ -75,10 +62,6 @@ async function executeOne(w: {
   version: number;
   ledgerTxId: string | null;
 }): Promise<ExecuteResult> {
-  const env = getEnv();
-  const conn = getSolanaConnection();
-  const privy = getPrivyServerClient();
-
   // ── Claim row: optimistic lock via version bump ───────────────────────
   const claim = await prisma.withdrawal.updateMany({
     where: { id: w.id, status: "QUEUED", version: w.version },
@@ -95,80 +78,17 @@ async function executeOne(w: {
     // ── Resolve user's embedded wallet ──────────────────────────────────
     const user = await prisma.user.findUnique({ where: { id: w.userId } });
     if (!user || !user.embeddedWalletAddress) {
-      // TODO #1's auth backfill makes this rare, but a brand-new user whose
-      // wallet is still being provisioned can land here. Treat as terminal
-      // for this attempt — reversal credits them back; they can retry later.
       return await markFailed(w, "WALLET_NOT_DELEGATED: user has no embedded wallet");
     }
 
-    // Re-validate destination address (defense in depth — shouldn't fail since
-    // intake validated, but if a DB row was forged or migration corrupted it,
-    // this catches it before the chain does).
-    let toPk: PublicKey;
-    try {
-      toPk = parseSolanaAddress(w.toAddress);
-    } catch (err) {
-      return await markFailed(w, `address re-validation failed: ${(err as Error).message}`);
-    }
-
-    const fromPk = parseSolanaAddress(user.embeddedWalletAddress);
-    const usdcMint = parseSolanaAddress(env.USDC_MINT_ADDRESS);
-
-    const fromAta = getAssociatedTokenAddressSync(usdcMint, fromPk, true);
-    const toAta = getAssociatedTokenAddressSync(usdcMint, toPk, true);
-
-    // ── Ensure destination ATA exists ───────────────────────────────────
-    const toAtaAccount = await conn.getAccountInfo(toAta, "confirmed");
-    const needsCreateAta = !toAtaAccount;
-
-    // ── Build SPL TransferChecked ───────────────────────────────────────
+    // ── On-chain USDC transfer via shared helper ────────────────────────
     const netUnits = w.amountUnits - w.feeUnits;
-    const transferIx: TransactionInstruction = createTransferCheckedInstruction(
-      fromAta,
-      usdcMint,
-      toAta,
-      fromPk,
-      netUnits,
-      6, // USDC decimals
-    );
-
-    const tx = new Transaction();
-    if (needsCreateAta) {
-      logger.info(
-        `[withdrawal ${w.id}] destination ATA ${toAta.toBase58()} missing; prepending create instruction`,
-      );
-      const createAtaIx = createAssociatedTokenAccountInstruction(
-        fromPk, // payer (source wallet pays rent + fee)
-        toAta, // ata to create
-        toPk, // owner of the new ata
-        usdcMint, // mint
-      );
-      tx.add(createAtaIx);
-    }
-    tx.add(transferIx);
-    tx.feePayer = fromPk;
-    const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("finalized");
-    tx.recentBlockhash = blockhash;
-
-    // ── Sign + broadcast via Privy delegated signing ────────────────────
-    // TODO fase 3: migrate to walletId variant when Privy server-auth v2 stabilizes
-    // address-variant is currently @deprecated but still functional
-    const result = await privy.walletApi.solana.signAndSendTransaction({
-      address: user.embeddedWalletAddress,
-      chainType: "solana",
-      transaction: tx,
-      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", // mainnet caip-2
+    const { txSignature } = await transferUsdcOnChain({
+      fromWalletAddress: user.embeddedWalletAddress,
+      toWalletAddress: w.toAddress,
+      amountUnits: netUnits,
+      contextLabel: `withdrawal:${w.id}`,
     });
-    const txSignature = result.hash;
-
-    // ── Wait for confirmation ───────────────────────────────────────────
-    const confirmation = await conn.confirmTransaction(
-      { signature: txSignature, blockhash, lastValidBlockHeight },
-      "confirmed",
-    );
-    if (confirmation.value.err) {
-      return await markFailed(w, `chain rejected: ${JSON.stringify(confirmation.value.err)}`);
-    }
 
     // ── Mark CONFIRMED — bump version again ─────────────────────────────
     await prisma.withdrawal.update({
