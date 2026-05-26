@@ -9,6 +9,7 @@ import { getInviteByToken } from "@/lib/invites/service";
 import { TOKEN_HEX } from "@/lib/invites/token";
 import { formatUsdc } from "@/lib/money/units";
 import { AcceptInviteButton } from "@/components/bets/accept-invite-button";
+import { WalletDelegationPrompt } from "@/components/wallet/wallet-delegation-prompt";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,11 @@ export default async function InvitePage({
               <span>{invite.expiresAt.toLocaleString("nl-NL")}</span>
             </div>
           </div>
+          <WalletDelegationPrompt
+            title="Wallet autorisatie vereist"
+            description="Autoriseer je wallet eenmalig om bets te kunnen plaatsen en accepteren."
+            actionLabel="Autoriseer wallet"
+          />
           <AcceptInviteButton
             betId={bet.id}
             inviteToken={token}

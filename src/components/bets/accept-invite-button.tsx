@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useWalletDelegation } from "@/hooks/use-wallet-delegation";
 import { acceptBet } from "@/lib/api/bets";
 import { ApiError } from "@/lib/api/client";
 
@@ -19,6 +20,7 @@ interface Props {
 export function AcceptInviteButton({ betId, inviteToken, stakeLabel }: Props) {
   const router = useRouter();
   const { data: me, isLoading } = useCurrentUser();
+  const { status: delegationStatus } = useWalletDelegation();
   const [pending, setPending] = useState(false);
 
   if (isLoading) {
@@ -44,6 +46,12 @@ export function AcceptInviteButton({ betId, inviteToken, stakeLabel }: Props) {
     );
   }
 
+  const canAccept = delegationStatus === "AUTHORIZED";
+  const delegationLoading =
+    delegationStatus === "LOADING" ||
+    delegationStatus === "NO_EMBEDDED_WALLET" ||
+    delegationStatus === "AUTHORIZING";
+
   async function handleAccept() {
     setPending(true);
     try {
@@ -56,26 +64,55 @@ export function AcceptInviteButton({ betId, inviteToken, stakeLabel }: Props) {
     } catch (err) {
       const code = err instanceof ApiError ? err.code : "UNKNOWN";
       const fallback = err instanceof Error ? err.message : "";
-      toast.error(getAcceptErrorMessage(code, fallback));
+      if (code === "BET_WALLET_NOT_DELEGATED") {
+        toast.error("Wallet niet geautoriseerd", {
+          description:
+            "Autoriseer je wallet voordat je bets kunt accepteren.",
+          action: {
+            label: "Wallet instellingen",
+            onClick: () => router.push("/me"),
+          },
+        });
+      } else {
+        toast.error(getAcceptErrorMessage(code, fallback));
+      }
       setPending(false);
     }
   }
 
   return (
-    <Button
-      onClick={handleAccept}
-      disabled={pending}
-      className="w-full bg-[#2563EB] hover:bg-[#2563EB]/90 text-white"
-    >
-      {pending ? (
-        <>
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          Accepteren…
-        </>
-      ) : (
-        `Accepteer bet voor ${stakeLabel}`
+    <div className="w-full space-y-2">
+      <Button
+        onClick={handleAccept}
+        disabled={pending || !canAccept}
+        className="w-full bg-[#2563EB] hover:bg-[#2563EB]/90 text-white"
+      >
+        {pending ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Accepteren…
+          </>
+        ) : delegationLoading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Wallet laden…
+          </>
+        ) : (
+          `Accepteer bet voor ${stakeLabel}`
+        )}
+      </Button>
+      {!canAccept && !delegationLoading && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <ShieldAlert className="h-3 w-3 shrink-0" />
+          <span>
+            <Link href="/me" className="underline underline-offset-2">
+              Autoriseer je wallet
+            </Link>{" "}
+            om bets te accepteren.
+          </span>
+        </div>
       )}
-    </Button>
+    </div>
   );
 }
 
@@ -100,6 +137,8 @@ function getAcceptErrorMessage(code: string, fallback: string): string {
       return "Je kunt je eigen bet niet accepteren.";
     case "BET_VERSION_MISMATCH":
       return "Concurrent update — probeer opnieuw.";
+    case "BET_WALLET_NOT_DELEGATED":
+      return "Autoriseer je wallet via instellingen om bets te accepteren.";
     case "unauthorized":
       return "Log in om deze bet te accepteren.";
     default:
