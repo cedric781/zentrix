@@ -108,7 +108,9 @@ function extractPrivyProfile(
 ): { email: string | null; embeddedAddress: string | null } {
   if (!privyUser) return { email: null, embeddedAddress: null };
   const email = privyUser.email?.address ?? privyUser.google?.email ?? null;
-  const embeddedWallet = privyUser.linkedAccounts.find(
+  // P19 fix: linkedAccounts can be undefined when Privy SDK returns minimal user object
+  const linkedAccounts = privyUser.linkedAccounts ?? [];
+  const embeddedWallet = linkedAccounts.find(
     (a) =>
       a.type === "wallet" &&
       "chainType" in a &&
