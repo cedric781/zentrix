@@ -16,8 +16,14 @@ import { useWalletDelegation } from "@/hooks/use-wallet-delegation";
  */
 export function WalletDelegationPrompt({
   onAuthorized,
+  title = "Enable withdrawals",
+  description = "Authorize Zentrix to sign withdrawals on your behalf. Your private keys stay safe with Privy — you can revoke anytime.",
+  actionLabel = "Enable withdrawals",
 }: {
   onAuthorized?: () => void;
+  title?: string;
+  description?: string;
+  actionLabel?: string;
 }) {
   const { status, delegate, delegating, error } = useWalletDelegation();
 
@@ -40,12 +46,9 @@ export function WalletDelegationPrompt({
     <div className="rounded-lg border border-[#2563EB]/30 bg-[#2563EB]/5 p-3 space-y-2">
       <div className="flex items-center gap-2">
         <ShieldCheck className="h-4 w-4 text-[#2563EB]" />
-        <p className="text-sm font-medium">Enable withdrawals</p>
+        <p className="text-sm font-medium">{title}</p>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Authorize Zentrix to sign withdrawals on your behalf. Your private keys
-        stay safe with Privy &mdash; you can revoke anytime.
-      </p>
+      <p className="text-xs text-muted-foreground">{description}</p>
       {error && (
         <p className="text-xs text-destructive break-words">{error}</p>
       )}
@@ -68,7 +71,7 @@ export function WalletDelegationPrompt({
               Authorizing&hellip;
             </>
           ) : (
-            "Enable withdrawals"
+            actionLabel
           )}
         </Button>
       )}
