@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { processCreatorDeposit } from "@/lib/escrow-deposits/processor";
+import { processCreatorDeposit, processOpponentDeposit } from "@/lib/escrow-deposits/processor";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,13 +34,15 @@ export async function GET() {
   const startedAt = Date.now();
 
   try {
-    const candidates = await prisma.bet.findMany({
+    const now = new Date();
+
+    const creatorCandidates = await prisma.bet.findMany({
       where: {
         escrowDepositStatus: { in: ["PENDING_CREATOR", "FAILED"] },
         status: "PENDING_ESCROW",
         OR: [
           { escrowDepositNextRetryAt: null },
-          { escrowDepositNextRetryAt: { lte: new Date() } },
+          { escrowDepositNextRetryAt: { lte: now } },
         ],
       },
       select: {
@@ -54,12 +56,33 @@ export async function GET() {
       orderBy: { escrowCreatorAttemptedAt: "asc" },
     });
 
+    const opponentCandidates = await prisma.bet.findMany({
+      where: {
+        escrowDepositStatus: { in: ["PENDING_OPPONENT", "FAILED"] },
+        status: "OPEN",
+        opponentUserId: { not: null },
+        OR: [
+          { escrowDepositNextRetryAt: null },
+          { escrowDepositNextRetryAt: { lte: now } },
+        ],
+      },
+      select: {
+        id: true,
+        opponentUserId: true,
+        stakeUnits: true,
+        escrowDepositRetryCount: true,
+        escrowDepositOpponentTxSig: true,
+      },
+      take: MAX_BETS_PER_RUN,
+      orderBy: { escrowOpponentAttemptedAt: "asc" },
+    });
+
     let confirmed = 0;
     let failed = 0;
     let terminal = 0;
     let skipped = 0;
 
-    for (const bet of candidates) {
+    for (const bet of creatorCandidates) {
       try {
         const result = await processCreatorDeposit(bet);
         switch (result.outcome) {
@@ -71,22 +94,50 @@ export async function GET() {
       } catch (err) {
         logger.error(
           { betId: bet.id, err: err instanceof Error ? err.message : String(err) },
-          "escrow-deposits cron: unhandled per-bet error",
+          "escrow-deposits cron: unhandled creator per-bet error",
         );
         failed++;
       }
     }
 
+    for (const bet of opponentCandidates) {
+      try {
+        const result = await processOpponentDeposit({
+          ...bet,
+          opponentUserId: bet.opponentUserId!,
+        });
+        switch (result.outcome) {
+          case "confirmed": confirmed++; break;
+          case "failed": failed++; break;
+          case "failed_terminal": terminal++; break;
+          case "skipped": skipped++; break;
+        }
+      } catch (err) {
+        logger.error(
+          { betId: bet.id, err: err instanceof Error ? err.message : String(err) },
+          "escrow-deposits cron: unhandled opponent per-bet error",
+        );
+        failed++;
+      }
+    }
+
+    const totalProcessed = creatorCandidates.length + opponentCandidates.length;
     const durationMs = Date.now() - startedAt;
 
     logger.info(
-      { processed: candidates.length, confirmed, failed, terminal, skipped, durationMs },
+      {
+        creators: creatorCandidates.length,
+        opponents: opponentCandidates.length,
+        confirmed, failed, terminal, skipped, durationMs,
+      },
       "escrow-deposits cron complete",
     );
 
     return NextResponse.json({
       ok: true,
-      processed: candidates.length,
+      processed: totalProcessed,
+      creators: creatorCandidates.length,
+      opponents: opponentCandidates.length,
       confirmed,
       failed,
       terminal,
