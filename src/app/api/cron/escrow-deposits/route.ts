@@ -37,7 +37,6 @@ export async function GET() {
     const candidates = await prisma.bet.findMany({
       where: {
         escrowDepositStatus: { in: ["PENDING_CREATOR", "FAILED"] },
-        escrowDepositCreatorTxSig: null,
         status: "PENDING_ESCROW",
         OR: [
           { escrowDepositNextRetryAt: null },
@@ -49,6 +48,7 @@ export async function GET() {
         createdById: true,
         stakeUnits: true,
         escrowDepositRetryCount: true,
+        escrowDepositCreatorTxSig: true,
       },
       take: MAX_BETS_PER_RUN,
       orderBy: { escrowCreatorAttemptedAt: "asc" },

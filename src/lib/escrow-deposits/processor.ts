@@ -31,6 +31,7 @@ export async function processCreatorDeposit(bet: {
   createdById: string;
   stakeUnits: bigint;
   escrowDepositRetryCount: number;
+  escrowDepositCreatorTxSig: string | null;
 }): Promise<CreatorDepositOutcome> {
   const workerId = `${WORKER_ID_PREFIX}:${crypto.randomUUID().substring(0, 8)}`;
   const staleThreshold = new Date(Date.now() - STALE_CLAIM_MS);
@@ -39,7 +40,6 @@ export async function processCreatorDeposit(bet: {
     where: {
       id: bet.id,
       escrowDepositStatus: { in: ["PENDING_CREATOR", "FAILED"] },
-      escrowDepositCreatorTxSig: null,
       OR: [
         { escrowDepositProcessingAt: null },
         { escrowDepositProcessingAt: { lt: staleThreshold } },
@@ -55,31 +55,36 @@ export async function processCreatorDeposit(bet: {
     return { outcome: "skipped", betId: bet.id, reason: "claim lock failed" };
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: bet.createdById },
-    select: { embeddedWalletAddress: true, walletDelegatedAt: true },
-  });
-
-  if (!user?.embeddedWalletAddress || !user.walletDelegatedAt) {
-    return await markTerminal(
-      bet.id,
-      bet.createdById,
-      bet.stakeUnits,
-      `creator wallet not delegated (address=${!!user?.embeddedWalletAddress}, delegated=${!!user?.walletDelegatedAt})`,
-    );
-  }
-
+  // Orphan recovery: chain TX already confirmed, only ledger commit needed.
   let txSignature: string;
-  try {
-    const result = await transferUsdcOnChain({
-      fromWalletAddress: user.embeddedWalletAddress,
-      toWalletAddress: getEnv().ESCROW_WALLET_ADDRESS,
-      amountUnits: bet.stakeUnits,
-      contextLabel: `escrow-creator:${bet.id}`,
+  if (bet.escrowDepositCreatorTxSig) {
+    txSignature = bet.escrowDepositCreatorTxSig;
+  } else {
+    const user = await prisma.user.findUnique({
+      where: { id: bet.createdById },
+      select: { embeddedWalletAddress: true, walletDelegatedAt: true },
     });
-    txSignature = result.txSignature;
-  } catch (err) {
-    return await markRetryOrTerminal(bet, err);
+
+    if (!user?.embeddedWalletAddress || !user.walletDelegatedAt) {
+      return await markTerminal(
+        bet.id,
+        bet.createdById,
+        bet.stakeUnits,
+        `creator wallet not delegated (address=${!!user?.embeddedWalletAddress}, delegated=${!!user?.walletDelegatedAt})`,
+      );
+    }
+
+    try {
+      const result = await transferUsdcOnChain({
+        fromWalletAddress: user.embeddedWalletAddress,
+        toWalletAddress: getEnv().ESCROW_WALLET_ADDRESS,
+        amountUnits: bet.stakeUnits,
+        contextLabel: `escrow-creator:${bet.id}`,
+      });
+      txSignature = result.txSignature;
+    } catch (err) {
+      return await markRetryOrTerminal(bet, err);
+    }
   }
 
   try {
@@ -207,8 +212,11 @@ async function markTerminal(
     const account = await getUserAccount(tx, userId);
     await releaseBalance(tx, account.id, stakeUnits);
 
-    await tx.bet.update({
-      where: { id: betId },
+    const cancelResult = await tx.bet.updateMany({
+      where: {
+        id: betId,
+        status: { in: ["PENDING_ESCROW", "DRAFT"] },
+      },
       data: {
         status: "CANCELLED",
         escrowDepositStatus: "FAILED_TERMINAL",
@@ -218,6 +226,9 @@ async function markTerminal(
         version: { increment: 1 },
       },
     });
+    if (cancelResult.count !== 1) {
+      throw new Error(`markTerminal: bet ${betId} not in cancelable state`);
+    }
 
     await tx.betStateTransition.create({
       data: {
