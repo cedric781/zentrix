@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { WalletDelegationStatusCard } from "@/components/wallet/wallet-delegation-status-card";
 
 export default function MePage() {
   return (
@@ -56,6 +57,8 @@ function MeContent() {
       </div>
 
       <WalletBalanceCard />
+
+      <WalletDelegationStatusCard />
 
       <Card>
         <CardHeader>
