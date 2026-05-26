@@ -392,19 +392,15 @@ export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult>
   }
 
   const tokenHash = computeTokenHash(inviteToken);
-  const ledgerKey = `bet-accept:${idempotencyKey}`;
 
   await requireWalletDelegated(opponentUserId);
 
   return await prisma.$transaction(async (tx) => {
-    // 1. Idempotency short-circuit.
-    const existingTx = await tx.ledgerTransaction.findUnique({
-      where: { idempotencyKey: ledgerKey },
+    // 1. Idempotency short-circuit via Bet.acceptIdempotencyKey unique constraint.
+    const existingBet = await tx.bet.findUnique({
+      where: { acceptIdempotencyKey: idempotencyKey },
     });
-    if (existingTx?.refId) {
-      const replayedBet = await tx.bet.findUnique({ where: { id: existingTx.refId } });
-      if (replayedBet) return { bet: replayedBet };
-    }
+    if (existingBet) return { bet: existingBet };
 
     // 2. Find invite by hash.
     const invite = await tx.betInvite.findUnique({ where: { tokenHash } });
@@ -463,66 +459,45 @@ export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult>
       }
     }
 
-    // 8. Lock opponent account + balance check.
+    // 8. Reserve opponent stake (soft lock, no ledger entry — cron commits after chain TX).
     const opponentAcct = await getUserAccount(tx, opponentUserId);
-    const locked = await lockAccount(tx, opponentAcct.id);
-    if (locked.balanceUnits < bet.stakeUnits) {
-      throw new BetError(
-        "BET_INSUFFICIENT_BALANCE",
-        `Need ${bet.stakeUnits} units, have ${locked.balanceUnits}`,
-        402,
-      );
+    try {
+      await reserveBalance(tx, opponentAcct.id, bet.stakeUnits);
+    } catch (err) {
+      if (err instanceof ReservationError && err.code === "INSUFFICIENT_AVAILABLE") {
+        throw new BetError(
+          "BET_INSUFFICIENT_BALANCE",
+          `Opponent needs ${bet.stakeUnits} units, insufficient available balance`,
+          402,
+        );
+      }
+      throw err;
     }
-
-    // 9. Bet escrow exists already (created in createBet).
-    const escrowAcct = await getOrCreateBetEscrowAccount(tx, bet.id);
 
     const acceptorSide: "A" | "B" = bet.creatorSide === "A" ? "B" : "A";
 
-    // 10. recordTransaction: opponent hold.
-    let ledgerResult;
-    try {
-      ledgerResult = await recordTransaction({
-        tx,
-        idempotencyKey: ledgerKey,
-        description: `Bet opponent hold (bet=${bet.id})`,
-        initiatorUserId: opponentUserId,
-        refType: "bet",
-        refId: bet.id,
-        lines: [
-          {
-            debitAccountId: opponentAcct.id,
-            creditAccountId: escrowAcct.id,
-            amountUnits: bet.stakeUnits,
-            entryType: "ESCROW_LOCK",
-            note: `bet-hold:${bet.id}:opponent`,
-          },
-        ],
-      });
-    } catch (e) {
-      if (isPoolCreatorTriggerError(e)) {
-        throw new BetError(
-          "BET_CREATOR_BETTING_OWN_POOL",
-          "Pool creator may not bet on own pool",
-          403,
-        );
-      }
-      throw e;
-    }
-
-    // 11. Promote OPEN → ACTIVE with version-guard.
-    let updated;
+    // 9. Assign opponent + mark PENDING_OPPONENT for cron escrow deposit.
+    // No ledger entries here — cron processOpponentDeposit creates them after chain confirm.
+    let updated: { count: number };
     try {
       updated = await tx.bet.updateMany({
         where: { id: bet.id, version: bet.version, status: "OPEN" },
         data: {
-          status: "ACTIVE",
-          version: bet.version + 1,
+          version: { increment: 1 },
           opponentUserId,
           acceptorSide,
+          acceptIdempotencyKey: idempotencyKey,
+          escrowDepositStatus: "PENDING_OPPONENT",
+          escrowOpponentAttemptedAt: new Date(),
         },
       });
     } catch (e) {
+      // NOTE: P2002 race on acceptIdempotencyKey is intentionally NOT caught here.
+      // Prisma issue #20496: catching P2002 inside a postgres $transaction callback
+      // leaves the tx in aborted state — in-tx findUnique can return stale/null data
+      // and prior writes may not persist. Race loser receives 500; UI retry will
+      // hit the idempotency short-circuit (regel ~399 findUnique) when race winner
+      // has committed. Acceptable for current scale.
       if (isPoolCreatorTriggerError(e)) {
         throw new BetError(
           "BET_CREATOR_BETTING_OWN_POOL",
@@ -549,15 +524,15 @@ export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult>
       data: { betId: bet.id, userId: opponentUserId, side: acceptorSide },
     });
 
-    // 13. Audit transition.
+    // 11. Audit: opponent accepted, escrow pending via cron.
     await tx.betStateTransition.create({
       data: {
         betId: bet.id,
         fromStatus: "OPEN",
-        toStatus: "ACTIVE",
+        toStatus: "OPEN",
         actorId: opponentUserId,
         actorType: "USER",
-        metadata: { ledgerTxId: ledgerResult.transaction.id },
+        metadata: { event: "opponent_accepted", escrowStatus: "PENDING_OPPONENT" },
       },
     });
 

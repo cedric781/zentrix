@@ -456,6 +456,7 @@ model Bet {
   escrowDepositProcessingBy  String?               @map("escrow_deposit_processing_by")
 
   idempotencyKey             String?               @unique @map("idempotency_key")
+  acceptIdempotencyKey       String?               @unique @map("accept_idempotency_key")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
