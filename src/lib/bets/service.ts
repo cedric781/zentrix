@@ -161,12 +161,20 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
     idempotencyKey,
   } = input;
 
+  const env = getEnv();
+  if (env.BETS_DISABLED) {
+    throw new BetError(
+      "BETS_DISABLED",
+      "Bet placement temporarily disabled (operator maintenance)",
+      503,
+    );
+  }
+
   // 1. Cheap input validation.
   assertUuidV4(idempotencyKey, "idempotencyKey");
   if (creatorSide !== "A" && creatorSide !== "B") {
     throw new BetError("BET_INVALID_INPUT", `creatorSide must be "A" or "B"`, 400);
   }
-  const env = getEnv();
   if (
     typeof stakeUnits !== "bigint" ||
     stakeUnits < env.BET_MIN_USDC_UNITS ||
@@ -369,6 +377,14 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
 
 export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult> {
   const { opponentUserId, inviteToken, idempotencyKey } = input;
+
+  if (getEnv().BETS_DISABLED) {
+    throw new BetError(
+      "BETS_DISABLED",
+      "Bet placement temporarily disabled (operator maintenance)",
+      503,
+    );
+  }
 
   assertUuidV4(idempotencyKey, "idempotencyKey");
   if (!TOKEN_HEX.test(inviteToken)) {

@@ -21,6 +21,7 @@ const EnvSchema = z.object({
   CRON_SECRET: z.string().min(32).optional(),
   DEPOSITS_DISABLED: z.coerce.boolean().default(false),
   WITHDRAWALS_DISABLED: z.coerce.boolean().default(false),
+  BETS_DISABLED: z.coerce.boolean().default(false),
   WITHDRAWAL_FEE_BPS: z.coerce.number().int().min(0).max(1000).default(50),
   WITHDRAWAL_FEE_MIN_USDC: z.string().default("0.5"),
   WITHDRAWAL_FEE_MAX_USDC: z.string().default("10"),
