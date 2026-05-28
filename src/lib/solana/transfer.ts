@@ -126,6 +126,7 @@ export async function transferUsdcOnChain(
       chainType: "solana",
       transaction: tx,
       caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      sponsor: true,
     });
     txSignature = result.hash;
   } catch (err) {
