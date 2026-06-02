@@ -15,6 +15,11 @@ const Body = z.object({
   // Optional Privy walletId for the escrow wallet. Falls back to
   // ESCROW_WALLET_ID env. When set, signing uses the walletId path.
   walletId: z.string().min(1).optional(),
+  // Optional Privy idempotency key — forwarded to signAndSendTransaction.
+  // Used to empirically probe Privy's repeat-key behaviour: send the same
+  // key twice and observe whether the 2nd call returns the same txSignature
+  // (outcome 1) or throws a duplicate error (outcome 2).
+  idempotencyKey: z.string().min(1).max(200).optional(),
 });
 
 export async function POST(req: Request) {
@@ -52,20 +57,29 @@ export async function POST(req: Request) {
       toWalletAddress: parsed.data.toAddress,
       amountUnits,
       contextLabel: "admin-escrow-signing-probe",
+      idempotencyKey: parsed.data.idempotencyKey,
     });
     return NextResponse.json({
       ok: true, from: escrow, to: parsed.data.toAddress,
       signedVia: fromWalletId ? "walletId" : "address",
+      idempotencyKey: parsed.data.idempotencyKey ?? null,
       amountUnits: amountUnits.toString(),
       txSignature: result.txSignature, slot: result.slot,
       createdDestinationAta: result.createdDestinationAta,
     });
   } catch (err) {
     if (err instanceof TransferUsdcError) {
+      // Surface the underlying Privy error detail so the empirical repeat-key
+      // probe can read the exact backend code/status (outcome 2).
+      const cause = err.cause as { code?: unknown; status?: unknown; type?: unknown; message?: unknown } | undefined;
       return NextResponse.json({
         ok: false, errorType: "TransferUsdcError", code: err.code,
         message: err.message,
+        idempotencyKey: parsed.data.idempotencyKey ?? null,
         cause: err.cause instanceof Error ? err.cause.message : String(err.cause ?? ""),
+        causeCode: cause?.code ?? null,
+        causeStatus: cause?.status ?? null,
+        causeType: cause?.type ?? null,
       }, { status: 502 });
     }
     return NextResponse.json({
