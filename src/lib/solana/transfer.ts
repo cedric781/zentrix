@@ -21,6 +21,16 @@ export interface TransferUsdcParams {
   toWalletAddress: string;
   amountUnits: bigint;
   contextLabel?: string;
+  /**
+   * Optional Privy walletId for the source wallet. When set, signing
+   * addresses the wallet directly via `{ walletId }` instead of the
+   * (deprecated) `{ address, chainType }` path. Required for standalone
+   * server wallets that have no associated Privy user — the address path
+   * resolves through a user lookup and fails with "User not found with
+   * provided wallet address". The address is still used for fee-payer and
+   * ATA derivation; only the signer identifier changes.
+   */
+  fromWalletId?: string;
 }
 
 export interface TransferUsdcResult {
@@ -49,7 +59,7 @@ export class TransferUsdcError extends Error {
 export async function transferUsdcOnChain(
   params: TransferUsdcParams,
 ): Promise<TransferUsdcResult> {
-  const { fromWalletAddress, toWalletAddress, amountUnits, contextLabel } = params;
+  const { fromWalletAddress, toWalletAddress, amountUnits, contextLabel, fromWalletId } = params;
 
   if (amountUnits <= 0n) {
     throw new TransferUsdcError(
@@ -121,13 +131,22 @@ export async function transferUsdcOnChain(
   const privy = getPrivyServerClient();
   let txSignature: string;
   try {
-    const result = await privy.walletApi.solana.signAndSendTransaction({
-      address: fromWalletAddress,
-      chainType: "solana",
-      transaction: tx,
-      caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-      sponsor: true,
-    });
+    // walletId path for user-less server wallets; address path (deprecated)
+    // for user wallets — see TransferUsdcParams.fromWalletId.
+    const result = fromWalletId
+      ? await privy.walletApi.solana.signAndSendTransaction({
+          walletId: fromWalletId,
+          transaction: tx,
+          caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          sponsor: true,
+        })
+      : await privy.walletApi.solana.signAndSendTransaction({
+          address: fromWalletAddress,
+          chainType: "solana",
+          transaction: tx,
+          caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          sponsor: true,
+        });
     txSignature = result.hash;
   } catch (err) {
     logger.error(
