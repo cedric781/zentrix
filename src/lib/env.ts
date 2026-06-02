@@ -30,6 +30,8 @@ const EnvSchema = z.object({
   PLATFORM_TREASURY_SCOPE: z.string().default("treasury"),
   ADMIN_API_TOKEN: z.string().min(32).optional(),
   ADMIN_USER_IDS: z.string().optional(),
+  // Escrow signing-probe kill-switch. Route is 404 unless this === "true".
+  ESCROW_TEST_ENABLED: z.string().optional(),
   SENTRY_DSN: z.string().url().optional(),
   POOL_MIN_BET_USDC: z.string().default("1"),
   POOL_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(1000).default(200),
