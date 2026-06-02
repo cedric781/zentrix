@@ -137,6 +137,7 @@ async function createAcceptedBet(
   });
   const accepted = await acceptBet({
     opponentUserId: opponent.id,
+    betId: created.bet.id,
     inviteToken: created.inviteToken!,
     idempotencyKey: newKey(),
   });
