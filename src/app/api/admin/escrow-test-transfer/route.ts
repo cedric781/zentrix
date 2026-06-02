@@ -12,6 +12,9 @@ const MAX_TEST_UNITS = 1_000_000n; // 1 USDC
 const Body = z.object({
   toAddress: z.string().min(32).max(44),
   amountUnits: z.string().regex(/^\d+$/, "amountUnits must be integer micro-USDC string"),
+  // Optional Privy walletId for the escrow wallet. Falls back to
+  // ESCROW_WALLET_ID env. When set, signing uses the walletId path.
+  walletId: z.string().min(1).optional(),
 });
 
 export async function POST(req: Request) {
@@ -41,15 +44,18 @@ export async function POST(req: Request) {
   }
 
   const escrow = getEnv().ESCROW_WALLET_ADDRESS;
+  const fromWalletId = parsed.data.walletId ?? getEnv().ESCROW_WALLET_ID;
   try {
     const result = await transferUsdcOnChain({
       fromWalletAddress: escrow,
+      fromWalletId,
       toWalletAddress: parsed.data.toAddress,
       amountUnits,
       contextLabel: "admin-escrow-signing-probe",
     });
     return NextResponse.json({
       ok: true, from: escrow, to: parsed.data.toAddress,
+      signedVia: fromWalletId ? "walletId" : "address",
       amountUnits: amountUnits.toString(),
       txSignature: result.txSignature, slot: result.slot,
       createdDestinationAta: result.createdDestinationAta,

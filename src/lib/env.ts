@@ -32,6 +32,11 @@ const EnvSchema = z.object({
   ADMIN_USER_IDS: z.string().optional(),
   // Escrow signing-probe kill-switch. Route is 404 unless this === "true".
   ESCROW_TEST_ENABLED: z.string().optional(),
+  // Privy walletId for the escrow server-wallet (e.g. "ttf3kalpidc4jkkf396gkqjn").
+  // Used to sign via the walletId path since escrow has no associated Privy
+  // user (ownerId: null) — the address path fails with "User not found".
+  // Probe-only for now.
+  ESCROW_WALLET_ID: z.string().optional(),
   SENTRY_DSN: z.string().url().optional(),
   POOL_MIN_BET_USDC: z.string().default("1"),
   POOL_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(1000).default(200),
