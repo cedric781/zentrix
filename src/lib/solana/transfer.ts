@@ -31,6 +31,31 @@ export interface TransferUsdcParams {
    * ATA derivation; only the signer identifier changes.
    */
   fromWalletId?: string;
+  /**
+   * Optional Privy idempotency key. Aimed at the "chain succeeds, DB
+   * sig-persist crashes, retry re-sends" window that caller-side sig-column
+   * recovery cannot close (the crash happens before the sig is persisted).
+   *
+   * VERIFIED against @privy-io/server-auth@1.32.5 (dist/cjs):
+   *   - The SDK forwards this verbatim as the HTTP header
+   *     `privy-idempotency-key` (utils.js extractIdempotencyKeyHeader) and
+   *     includes it in the authorization-signature payload.
+   *   - All dedupe logic is SERVER-SIDE at Privy's backend; the SDK does NOT
+   *     cache or special-case repeats. On a repeat it simply returns whatever
+   *     the backend returns: success → { hash, caip2 }, or error → throws
+   *     PrivyApiError(code, status, message).
+   *
+   * NOT VERIFIABLE from the installed package: what Privy's backend actually
+   * does on a repeated key — return the original hash, throw a typed
+   * duplicate error, or apply a TTL window. The SDK is pure transport and
+   * carries no JSDoc on this. Treat repeat-behavior as UNDOCUMENTED here;
+   * the payout processor (step 2) must defend against BOTH a returned hash
+   * AND a duplicate-key error being the "already paid = success" signal.
+   *
+   * Use a stable per-leg key, e.g. `payout-winner:${betId}`. Applies to both
+   * the walletId and address signing paths (top-level on the Privy RPC input).
+   */
+  idempotencyKey?: string;
 }
 
 export interface TransferUsdcResult {
@@ -59,7 +84,7 @@ export class TransferUsdcError extends Error {
 export async function transferUsdcOnChain(
   params: TransferUsdcParams,
 ): Promise<TransferUsdcResult> {
-  const { fromWalletAddress, toWalletAddress, amountUnits, contextLabel, fromWalletId } = params;
+  const { fromWalletAddress, toWalletAddress, amountUnits, contextLabel, fromWalletId, idempotencyKey } = params;
 
   if (amountUnits <= 0n) {
     throw new TransferUsdcError(
@@ -133,12 +158,16 @@ export async function transferUsdcOnChain(
   try {
     // walletId path for user-less server wallets; address path (deprecated)
     // for user wallets — see TransferUsdcParams.fromWalletId.
+    // idempotencyKey is a top-level field on the Privy RPC input
+    // (WithOptionalIdempotencyKey wraps the walletId|address union), so it
+    // is forwarded identically on both signing paths. Omitted when absent.
     const result = fromWalletId
       ? await privy.walletApi.solana.signAndSendTransaction({
           walletId: fromWalletId,
           transaction: tx,
           caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           sponsor: true,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
         })
       : await privy.walletApi.solana.signAndSendTransaction({
           address: fromWalletAddress,
@@ -146,6 +175,7 @@ export async function transferUsdcOnChain(
           transaction: tx,
           caip2: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           sponsor: true,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
         });
     txSignature = result.hash;
   } catch (err) {
