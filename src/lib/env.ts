@@ -30,12 +30,10 @@ const EnvSchema = z.object({
   PLATFORM_TREASURY_SCOPE: z.string().default("treasury"),
   ADMIN_API_TOKEN: z.string().min(32).optional(),
   ADMIN_USER_IDS: z.string().optional(),
-  // Escrow signing-probe kill-switch. Route is 404 unless this === "true".
-  ESCROW_TEST_ENABLED: z.string().optional(),
   // Privy walletId for the escrow server-wallet (e.g. "ttf3kalpidc4jkkf396gkqjn").
   // Used to sign via the walletId path since escrow has no associated Privy
   // user (ownerId: null) — the address path fails with "User not found".
-  // Probe-only for now.
+  // Required by the payout cron to release escrow on-chain.
   ESCROW_WALLET_ID: z.string().optional(),
   SENTRY_DSN: z.string().url().optional(),
   POOL_MIN_BET_USDC: z.string().default("1"),
