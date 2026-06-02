@@ -9,14 +9,16 @@ import { serializeBet } from "@/lib/http/serialize";
 export const runtime = "nodejs";
 
 const Body = z.object({
-  inviteToken: z.string().min(8).max(256),
+  // Optional: present only for private deep-link accepts. Marketplace accepts
+  // (OPEN bets visible to all) resolve via the URL bet id instead.
+  inviteToken: z.string().min(8).max(256).optional(),
 });
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  await params;
+  const { id: betId } = await params;
 
   let idempotencyKey: string;
   try {
@@ -47,6 +49,7 @@ export async function POST(
   try {
     const result = await acceptBet({
       opponentUserId: user.id,
+      betId,
       inviteToken: parsed.data.inviteToken,
       idempotencyKey,
     });

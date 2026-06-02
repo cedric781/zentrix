@@ -120,6 +120,7 @@ async function createPoolBet(
   });
   const accepted = await acceptBet({
     opponentUserId: opponent.id,
+    betId: created.bet.id,
     inviteToken: created.inviteToken!,
     idempotencyKey: newKey(),
   });
@@ -399,6 +400,7 @@ describe("createBet matchId path + settleBet ACTIVE pad", () => {
     });
     const accepted = await acceptBet({
       opponentUserId: o1.id,
+      betId: created.bet.id,
       inviteToken: created.inviteToken!,
       idempotencyKey: newKey(),
     });

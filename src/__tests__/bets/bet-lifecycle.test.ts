@@ -317,6 +317,7 @@ describe("acceptBet", () => {
 
     const accepted = await acceptBet({
       opponentUserId: opponent.id,
+      betId: created.bet.id,
       inviteToken: created.inviteToken!,
       idempotencyKey: newKey(),
     });
@@ -349,12 +350,70 @@ describe("acceptBet", () => {
     expect(transitions.map((t) => t.toStatus)).toEqual(["OPEN", "ACTIVE"]);
   });
 
+  it("marketplace happy path — accept without invite token (token-less)", async () => {
+    const creator = await makeUser("a-mkt-creator");
+    const opponent = await makeUser("a-mkt-opp");
+    const stake = 7_000_000n;
+    const oppStart = await userBalance(opponent.id);
+
+    const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
+      creatorId: creator.id,
+      creatorSide: "A",
+      stakeUnits: stake,
+      expiresInHours: 24,
+      idempotencyKey: newKey(),
+    });
+
+    // No inviteToken — resolves purely via the URL bet id (marketplace accept).
+    const accepted = await acceptBet({
+      opponentUserId: opponent.id,
+      betId: created.bet.id,
+      idempotencyKey: newKey(),
+    });
+
+    expect(accepted.bet.status).toBe("ACTIVE");
+    expect(accepted.bet.opponentUserId).toBe(opponent.id);
+    expect(accepted.bet.acceptorSide).toBe("B");
+    expect(accepted.bet.version).toBe(2);
+
+    const participants = await prisma.betParticipant.findMany({
+      where: { betId: accepted.bet.id },
+      orderBy: { side: "asc" },
+    });
+    expect(participants).toHaveLength(2);
+
+    // Invite is still marked used even on the token-less path.
+    const invite = await prisma.betInvite.findUnique({ where: { betId: accepted.bet.id } });
+    expect(invite!.usedAt).not.toBeNull();
+    expect(invite!.usedById).toBe(opponent.id);
+
+    expect(await escrowBalance(accepted.bet.id)).toBe(stake * 2n);
+    expect(await userBalance(opponent.id)).toBe(oppStart - stake);
+  });
+
   it("bad invite token — BET_INVITE_INVALID", async () => {
+    const creator = await makeUser("a-bad-c");
     const opp = await makeUser("a-bad-opp");
     const fakeToken = "0".repeat(64);
+    const created = await createBet({
+      title: "Test bet",
+      outcomeA: "A wins",
+      outcomeB: "B wins",
+      creatorId: creator.id,
+      creatorSide: "A",
+      stakeUnits: 5_000_000n,
+      expiresInHours: 24,
+      idempotencyKey: newKey(),
+    });
+    // A supplied-but-unrecognized token must still be rejected (private path),
+    // even though the bet id itself is valid.
     await expect(
       acceptBet({
         opponentUserId: opp.id,
+        betId: created.bet.id,
         inviteToken: fakeToken,
         idempotencyKey: newKey(),
       }),
@@ -381,6 +440,7 @@ describe("acceptBet", () => {
     await expect(
       acceptBet({
         opponentUserId: opp.id,
+        betId: created.bet.id,
         inviteToken: created.inviteToken!,
         idempotencyKey: newKey(),
       }),
@@ -402,6 +462,7 @@ describe("acceptBet", () => {
     await expect(
       acceptBet({
         opponentUserId: creator.id,
+        betId: created.bet.id,
         inviteToken: created.inviteToken!,
         idempotencyKey: newKey(),
       }),
@@ -426,11 +487,13 @@ describe("acceptBet", () => {
     const settled = await Promise.allSettled([
       acceptBet({
         opponentUserId: opp1.id,
+        betId: created.bet.id,
         inviteToken: created.inviteToken!,
         idempotencyKey: newKey(),
       }),
       acceptBet({
         opponentUserId: opp2.id,
+        betId: created.bet.id,
         inviteToken: created.inviteToken!,
         idempotencyKey: newKey(),
       }),
@@ -526,6 +589,7 @@ describe("cancelBet", () => {
     });
     await acceptBet({
       opponentUserId: opp.id,
+      betId: created.bet.id,
       inviteToken: created.inviteToken!,
       idempotencyKey: newKey(),
     });

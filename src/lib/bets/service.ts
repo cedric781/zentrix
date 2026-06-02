@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import { Prisma, type Bet, type BetResultClaim, type BetParticipantConfirmation } from "@prisma/client";
+import { Prisma, type Bet, type BetInvite, type BetResultClaim, type BetParticipantConfirmation } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   recordTransaction,
@@ -71,7 +71,10 @@ export interface CreateBetResult {
 
 export interface AcceptBetInput {
   opponentUserId: string;
-  inviteToken: string;
+  /** URL-derived bet id. Always present; primary key for the marketplace path. */
+  betId: string;
+  /** Optional private deep-link token. When omitted, accept resolves via betId. */
+  inviteToken?: string;
   idempotencyKey: string;
 }
 
@@ -376,7 +379,7 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
 // ── acceptBet ────────────────────────────────────────────────────────
 
 export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult> {
-  const { opponentUserId, inviteToken, idempotencyKey } = input;
+  const { opponentUserId, betId, inviteToken, idempotencyKey } = input;
 
   if (getEnv().BETS_DISABLED) {
     throw new BetError(
@@ -387,11 +390,11 @@ export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult>
   }
 
   assertUuidV4(idempotencyKey, "idempotencyKey");
-  if (!TOKEN_HEX.test(inviteToken)) {
+  // Token is optional (marketplace model — token = deep-link convenience, not
+  // an access gate). Only validate its format when one is actually supplied.
+  if (inviteToken !== undefined && !TOKEN_HEX.test(inviteToken)) {
     throw new BetError("BET_INVITE_INVALID", `Invite token format invalid`, 404);
   }
-
-  const tokenHash = computeTokenHash(inviteToken);
 
   await requireWalletDelegated(opponentUserId);
 
@@ -402,28 +405,60 @@ export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult>
     });
     if (existingBet) return { bet: existingBet };
 
-    // 2. Find invite by hash.
-    const invite = await tx.betInvite.findUnique({ where: { tokenHash } });
-    if (!invite) {
-      throw new BetError("BET_INVITE_INVALID", "Invite token not recognized", 404);
-    }
+    // 2. Resolve bet + invite. Both entry paths converge on the same bet row
+    //    and run the identical guard/escrow tail below:
+    //    - with token  → find invite by hash, validate, derive bet (private deep-link)
+    //    - without token → lock + load bet via URL betId, load its invite (@unique)
+    let bet: Bet;
+    let invite: BetInvite | null;
 
-    // 3. Constant-time compare (belt-and-braces).
-    if (!safeHashCompare(invite.tokenHash, tokenHash)) {
-      throw new BetError("BET_INVITE_INVALID", "Invite token mismatch", 404);
-    }
+    if (inviteToken !== undefined) {
+      const tokenHash = computeTokenHash(inviteToken);
 
-    // 4. Invite guards.
-    if (invite.usedAt !== null) {
-      throw new BetError("BET_ALREADY_ACCEPTED", "Invite already used", 409);
-    }
-    if (invite.expiresAt.getTime() < Date.now()) {
-      throw new BetError("BET_INVITE_INVALID", "Invite expired", 404);
-    }
+      // 2a. Find invite by hash.
+      invite = await tx.betInvite.findUnique({ where: { tokenHash } });
+      if (!invite) {
+        throw new BetError("BET_INVITE_INVALID", "Invite token not recognized", 404);
+      }
 
-    // 5. Lock bet row.
-    await lockBet(tx, invite.betId);
-    const bet = await tx.bet.findUniqueOrThrow({ where: { id: invite.betId } });
+      // 2b. Constant-time compare (belt-and-braces).
+      if (!safeHashCompare(invite.tokenHash, tokenHash)) {
+        throw new BetError("BET_INVITE_INVALID", "Invite token mismatch", 404);
+      }
+
+      // 2b-bis. Two sources for the same bet must never silently diverge: when
+      // the caller supplies both a URL betId and a token, they MUST agree. A
+      // mismatch is an error, not "token wins".
+      if (invite.betId !== betId) {
+        throw new BetError(
+          "BET_INVITE_INVALID",
+          "Invite token does not match bet id",
+          404,
+        );
+      }
+
+      // 2c. Invite guards.
+      if (invite.usedAt !== null) {
+        throw new BetError("BET_ALREADY_ACCEPTED", "Invite already used", 409);
+      }
+      if (invite.expiresAt.getTime() < Date.now()) {
+        throw new BetError("BET_INVITE_INVALID", "Invite expired", 404);
+      }
+
+      // 2d. Lock bet row.
+      await lockBet(tx, invite.betId);
+      bet = await tx.bet.findUniqueOrThrow({ where: { id: invite.betId } });
+    } else {
+      // 2a. Lock + load bet directly from the URL id (marketplace accept).
+      //     lockBet throws BET_NOT_FOUND (404) for an unknown id.
+      await lockBet(tx, betId);
+      bet = await tx.bet.findUniqueOrThrow({ where: { id: betId } });
+
+      // 2b. Load the bet's invite (@unique on betId) for the used-marking step.
+      //     Every bet created via createBet has one; null-tolerant for any
+      //     legacy row without an invite — bet guards below are the real gate.
+      invite = await tx.betInvite.findUnique({ where: { betId } });
+    }
 
     // 6. Bet guards.
     if (bet.status !== "OPEN") {
@@ -515,11 +550,14 @@ export async function acceptBet(input: AcceptBetInput): Promise<AcceptBetResult>
       );
     }
 
-    // 12. Mark invite used + insert participant.
-    await tx.betInvite.update({
-      where: { id: invite.id },
-      data: { usedAt: new Date(), usedById: opponentUserId },
-    });
+    // 12. Mark invite used + insert participant. invite may be null only for a
+    // legacy bet without an invite row (marketplace path); skip the update then.
+    if (invite) {
+      await tx.betInvite.update({
+        where: { id: invite.id },
+        data: { usedAt: new Date(), usedById: opponentUserId },
+      });
+    }
     await tx.betParticipant.create({
       data: { betId: bet.id, userId: opponentUserId, side: acceptorSide },
     });
