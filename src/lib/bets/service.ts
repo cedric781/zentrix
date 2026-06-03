@@ -310,7 +310,7 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
           creatorSide,
           stakeUnits,
           status: "PENDING_ESCROW",
-          settlementMode: "PROOF_CONFIRM",
+          settlementMode: "PEER_AGREE",
           resultStatus: "PENDING",
           version: 0,
           expiresAt,

@@ -21,7 +21,7 @@ export function mockBet(overrides: Partial<Bet> = {}): Bet {
     outcomeB: "",
     stakeUnits: 1000n,
     status: "OPEN",
-    settlementMode: "PROOF_CONFIRM",
+    settlementMode: "PEER_AGREE",
     resultStatus: "PENDING",
     winnerId: null,
     version: 1,
