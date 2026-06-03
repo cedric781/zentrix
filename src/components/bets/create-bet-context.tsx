@@ -24,6 +24,19 @@ export type CreatedBet = {
   expiresAt: Date;
 };
 
+export type SettlementMode = "PEER_AGREE" | "AUTO_VERIFY";
+
+/**
+ * A template can offer objective auto-resolve only when it declares
+ * supportsAutoResolve AND has at least one allowed source. Mirrors the gate in
+ * BetForm — kept here so the wizard state is the single source of truth.
+ */
+function deriveCanAutoVerify(t: BetTemplateSerialized | null): boolean {
+  if (!t || t.supportsAutoResolve !== true) return false;
+  const sources = t.allowedSources;
+  return Array.isArray(sources) && sources.length > 0;
+}
+
 type CreateBetState = {
   template: BetTemplateSerialized | null;
   setTemplate: (t: BetTemplateSerialized | null) => void;
@@ -44,6 +57,11 @@ type CreateBetState = {
   externalRef: CreateBetExternalRef | null;
   setExternalRef: (ref: CreateBetExternalRef | null) => void;
 
+  settlementMode: SettlementMode;
+  setSettlementMode: (mode: SettlementMode) => void;
+  /** True when the current template can offer AUTO_VERIFY (objective). */
+  canAutoVerify: boolean;
+
   created: CreatedBet | null;
   setCreated: (c: CreatedBet | null) => void;
 
@@ -61,6 +79,7 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
   const [stakeUnits, setStakeUnits] = useState("");
   const [expiresInHours, setExpiresInHours] = useState(24);
   const [externalRef, setExternalRefState] = useState<CreateBetExternalRef | null>(null);
+  const [settlementMode, setSettlementModeState] = useState<SettlementMode>("PEER_AGREE");
   const [created, setCreated] = useState<CreatedBet | null>(null);
 
   // useCallback so ExternalEventPicker's useEffect dep array stays stable.
@@ -68,12 +87,31 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
     setExternalRefState(ref);
   }, []);
 
+  // Coupled setter: switching to PEER_AGREE (subjective) clears any linked
+  // event in the SAME update, so the payload can never become
+  // PEER_AGREE + externalRef (the rejected combination).
+  const setSettlementMode = useCallback((mode: SettlementMode) => {
+    setSettlementModeState(mode);
+    if (mode === "PEER_AGREE") {
+      setExternalRefState(null);
+    }
+  }, []);
+
+  const canAutoVerify = deriveCanAutoVerify(template);
+
   const handleSetTemplate = (t: BetTemplateSerialized | null) => {
     setTemplate(t);
     if (t) {
       // Pre-fill title from template.name; preserve user-edited outcomes/side/stake.
       setTitle(t.name);
     }
+    // Re-derive the settlement default from the new template, and ALWAYS clear
+    // the linked event: an externalRef is bound to the previous template's
+    // allowed sources, so carrying it across a switch is never correct — and on
+    // a non-capable template it would recreate the PEER_AGREE + ref case.
+    const capable = deriveCanAutoVerify(t);
+    setSettlementModeState(capable ? "AUTO_VERIFY" : "PEER_AGREE");
+    setExternalRefState(null);
   };
 
   const reset = () => {
@@ -85,6 +123,7 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
     setStakeUnits("");
     setExpiresInHours(24);
     setExternalRefState(null);
+    setSettlementModeState("PEER_AGREE");
   };
 
   return (
@@ -106,6 +145,9 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
         setExpiresInHours,
         externalRef,
         setExternalRef,
+        settlementMode,
+        setSettlementMode,
+        canAutoVerify,
         created,
         setCreated,
         reset,
