@@ -8,6 +8,7 @@ import { parseIdempotencyKey } from "@/lib/http/idempotency";
 import { parseListQuery } from "@/lib/http/query";
 import { mapDomainError } from "@/lib/http/errors";
 import { serializeBet } from "@/lib/http/serialize";
+import { CreateBetBody } from "@/lib/bets/create-bet-schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,38 +19,6 @@ const BetStatusEnum = z.enum(
 
 const ScopeEnum = z.enum(["mine", "all"]).default("mine");
 const CategorySchema = z.string().min(1).max(50);
-
-const Body = z.object({
-  side: z.enum(["A", "B"]),
-  stakeUnits: z.string().regex(/^\d+$/, "stakeUnits must be a decimal string"),
-  expiresInHours: z.number().int().min(1).max(168),
-  poolId: z.string().min(1).optional(),
-  matchId: z.string().min(1).optional(),
-  title: z.string().min(1).max(200),
-  outcomeA: z.string().min(1).max(100),
-  outcomeB: z.string().min(1).max(100),
-  externalRef: z
-    .object({
-      provider: z.enum(["espn", "thesportsdb"]),
-      eventId: z.string().min(1).max(200),
-      league: z.string().min(1).max(100),
-      sport: z.enum([
-        "football",
-        "basketball",
-        "american_football",
-        "ice_hockey",
-        "baseball",
-        "tennis",
-        "mma",
-      ]),
-      eventStartsAt: z.string().datetime(),
-      eventEndsAt: z.string().datetime(),
-    })
-    .optional(),
-  templateId: z.string().uuid().optional(),
-  category: z.string().min(1).max(50).optional(),
-  isCustom: z.boolean().optional(),
-});
 
 export async function POST(req: Request) {
   let idempotencyKey: string;
@@ -70,7 +39,7 @@ export async function POST(req: Request) {
     throw err;
   }
 
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = CreateBetBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
       { error: "bad_body", issues: parsed.error.issues },
@@ -100,6 +69,7 @@ export async function POST(req: Request) {
       templateId: parsed.data.templateId,
       category: parsed.data.category,
       isCustom: parsed.data.isCustom,
+      settlementMode: parsed.data.settlementMode,
     });
 
     return NextResponse.json(
