@@ -8,6 +8,7 @@ import {
   type TxClient,
 } from "@/lib/ledger";
 import { getOrCreateBetEscrowAccount } from "./escrow";
+import { preparePayoutFields } from "@/lib/payouts/prepare";
 import { BetError } from "./errors";
 
 export interface SettleBetInput {
@@ -76,6 +77,13 @@ export async function settleBet(
       winnerId,
       settledAt: new Date(),
       version: bet.version + 1,
+      // Stap 5a — arm the on-chain SETTLE payout. Spread here (AFTER the
+      // recordTransaction above) so the SETTLEMENT_PAYOUT/FEE_COLLECTION
+      // entries and onChainPayoutStatus=PENDING commit ATOMICALLY in this same
+      // tx — the cron (separate tx) can never see PENDING before the entries
+      // exist (ledger-before-chain invariant). Gates on escrowLockedAt: a bet
+      // that never locked returns {} and stays out of the payouts cron query.
+      ...preparePayoutFields(bet),
     },
   });
   if (updated.count !== 1) {
