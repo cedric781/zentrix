@@ -16,6 +16,13 @@ const MAX_RETRIES = 10;
 export const STALE_CLAIM_MS = 5 * 60 * 1000;
 const WORKER_ID_PREFIX = "payouts-cron";
 
+// Sentinel persisted to payoutFeeTxSig when the fee leg is a no-op under the
+// single-wallet design (escrow === fee wallet, H.5a). It is NEVER a real
+// on-chain signature, so verifySig short-circuits it as confirmed and the
+// fee-leg dispatch reuses it on re-run instead of re-attempting the (failing)
+// self-transfer.
+const FEE_NOOP_SENTINEL = "SELF_TRANSFER_NOOP";
+
 function computeNextRetry(retryCount: number): Date {
   const seconds = Math.min(3600, Math.max(30, 2 ** retryCount * 15));
   return new Date(Date.now() + seconds * 1000);
@@ -188,6 +195,30 @@ async function processPendingPayout(bet: PayoutBetInput): Promise<PayoutOutcome>
   if (feeUnits > 0n) {
     if (bet.payoutFeeTxSig) {
       feeSig = bet.payoutFeeTxSig;
+    } else if (env.FEE_WALLET_ADDRESS === env.ESCROW_WALLET_ADDRESS) {
+      // Single-wallet design (H.5a): escrow and fee collection deliberately
+      // share ONE Privy wallet (ESCROW_WALLET_ADDRESS === FEE_WALLET_ADDRESS,
+      // risk accepted by the project owner). The fee is therefore already
+      // physically in this wallet — an escrow→fee transfer would be a
+      // self-transfer (rejected by transfer.ts with SELF_TRANSFER). The ledger
+      // FEE_COLLECTION entry already records the fee for accounting (revenue is
+      // queried from the DB, never the wallet balance), so there is nothing to
+      // move on-chain. Persist a sentinel so this leg is a durable no-op: a
+      // re-run reuses it via the branch above instead of re-attempting the
+      // failing transfer, and finalize treats it as confirmed without an RPC
+      // for a non-existent tx.
+      //
+      // Address comparison is exact (no case-folding): Solana base58 addresses
+      // are case-sensitive.
+      //
+      // Doc note: H.5e still lists "transferUsdcOnChain(escrow -> fee wallet,
+      // 0.04)" as a settle step; that predates the H.5a single-wallet decision.
+      // H.5a wins — for the single-wallet config the fee leg is a no-op.
+      feeSig = FEE_NOOP_SENTINEL;
+      await prisma.bet.update({
+        where: { id: bet.id },
+        data: { payoutFeeTxSig: feeSig },
+      });
     } else {
       try {
         const res = await transferUsdcOnChain({
@@ -275,6 +306,9 @@ async function recoverSubmittedPayout(bet: PayoutBetInput): Promise<PayoutOutcom
 type SigVerdict = "confirmed" | "failed" | "unknown";
 
 async function verifySig(sig: string): Promise<SigVerdict> {
+  // A no-op fee leg (single-wallet design, H.5a) never produced an on-chain
+  // tx — it is confirmed by construction. Never hand the sentinel to the RPC.
+  if (sig === FEE_NOOP_SENTINEL) return "confirmed";
   try {
     const conn = getSolanaConnection();
     const res = await conn.getSignatureStatuses([sig], { searchTransactionHistory: true });
