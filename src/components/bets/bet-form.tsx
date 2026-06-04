@@ -1,7 +1,6 @@
 "use client";
 
 import { useCreateBetState } from "./create-bet-context";
-import { SettlementModeSelector } from "./settlement-mode-selector";
 import { ExternalEventPicker } from "./external-event-picker";
 import { EventSearchPicker } from "./event-search-picker";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,11 +51,11 @@ export function BetForm() {
   const allowedSources = Array.isArray(allowedSourcesRaw)
     ? (allowedSourcesRaw as TemplateAllowedSource[])
     : [];
-  // Picker visibility is now driven by the chosen settlement mode, not the
-  // template capability directly. The context guarantees AUTO_VERIFY is only
-  // selectable on capable templates (canAutoVerify), so allowedSources is
-  // non-empty whenever this is true. Custom mode is PEER_AGREE → always false.
-  const showPicker = state.settlementMode === "AUTO_VERIFY";
+  // Picker visibility is driven by the template capability directly: an
+  // objective (auto-resolve-capable) template is hard AUTO_VERIFY with no human
+  // override, so canAutoVerify implies allowedSources is non-empty. Custom mode
+  // has no template → canAutoVerify false → picker hidden (PEER_AGREE).
+  const showPicker = state.canAutoVerify;
   // EventSearchPicker covers Sport+Combat via ESPN/TheSportsDB. Other
   // auto-resolve categories (Esports/Games) fall back to the manual picker.
   // null-safe: "" in custom mode (picker doesn't render, so unused).
@@ -103,7 +102,6 @@ export function BetForm() {
 
   return (
     <div className="space-y-4">
-    <SettlementModeSelector />
     {showPicker && (
       <div className="space-y-1">
         <label className="text-sm font-medium">

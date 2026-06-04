@@ -66,8 +66,13 @@ type CreateBetState = {
   externalRef: CreateBetExternalRef | null;
   setExternalRef: (ref: CreateBetExternalRef | null) => void;
 
+  /**
+   * Type-derived, never a human choice: AUTO_VERIFY for auto-resolve-capable
+   * templates, else PEER_AGREE. Set by the 3 derivation spots below; the
+   * submit button reads it. There is no setter — an objective bet is hard
+   * AUTO_VERIFY (the API decides), so there is no override to expose.
+   */
   settlementMode: SettlementMode;
-  setSettlementMode: (mode: SettlementMode) => void;
   /** True when the current template can offer AUTO_VERIFY (objective). */
   canAutoVerify: boolean;
 
@@ -95,16 +100,6 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
   // useCallback so ExternalEventPicker's useEffect dep array stays stable.
   const setExternalRef = useCallback((ref: CreateBetExternalRef | null) => {
     setExternalRefState(ref);
-  }, []);
-
-  // Coupled setter: switching to PEER_AGREE (subjective) clears any linked
-  // event in the SAME update, so the payload can never become
-  // PEER_AGREE + externalRef (the rejected combination).
-  const setSettlementMode = useCallback((mode: SettlementMode) => {
-    setSettlementModeState(mode);
-    if (mode === "PEER_AGREE") {
-      setExternalRefState(null);
-    }
   }, []);
 
   const canAutoVerify = deriveCanAutoVerify(template);
@@ -176,7 +171,6 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
         externalRef,
         setExternalRef,
         settlementMode,
-        setSettlementMode,
         canAutoVerify,
         created,
         setCreated,
