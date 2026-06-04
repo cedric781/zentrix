@@ -22,8 +22,10 @@ function formatIso(iso: string): string {
 export function BetReview() {
   const state = useCreateBetState();
 
+  // A path must be chosen — a template OR custom mode — before the preview is
+  // meaningful. In custom mode there is no template, so don't gate on it.
   const isFormComplete = Boolean(
-    state.template &&
+    (state.template || state.isCustom) &&
       state.title &&
       state.outcomeA &&
       state.outcomeB &&
@@ -44,7 +46,15 @@ export function BetReview() {
     <Card>
       <CardContent className="pt-6 space-y-3 text-sm">
         <div>
-          <strong>Template:</strong> {state.template?.name}
+          {state.isCustom ? (
+            <>
+              <strong>Type:</strong> Custom bet (peer-confirmed)
+            </>
+          ) : (
+            <>
+              <strong>Template:</strong> {state.template?.name}
+            </>
+          )}
         </div>
         <div>
           <strong>Title:</strong> {state.title}

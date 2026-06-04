@@ -40,9 +40,13 @@ export function SubmitBetButton() {
       state.settlementMode === "AUTO_VERIFY"
         ? state.externalRef ?? undefined
         : undefined,
-    templateId: state.template?.id,
-    category: state.template?.category,
-    isCustom: false,
+    // Custom (free) bets carry no template: templateId/category omitted, the
+    // isCustom flag satisfies the service "needs templateId|category|isCustom"
+    // guard. Sending templateId alongside isCustom=true would be REJECTED by
+    // the service, so the mutual-exclusion from the context is mirrored here.
+    templateId: state.isCustom ? undefined : state.template?.id,
+    category: state.isCustom ? undefined : state.template?.category,
+    isCustom: state.isCustom,
     settlementMode: state.settlementMode,
   };
 
