@@ -41,6 +41,15 @@ type CreateBetState = {
   template: BetTemplateSerialized | null;
   setTemplate: (t: BetTemplateSerialized | null) => void;
 
+  /**
+   * True when this is a free/custom bet (no template). A custom bet is ALWAYS
+   * subjective: PEER_AGREE, no externalRef. Mutually exclusive with `template`
+   * — they can never both be truthy, which would trip the service guard
+   * (createBet rejects templateId + isCustom together).
+   */
+  isCustom: boolean;
+  setIsCustom: (v: boolean) => void;
+
   title: string;
   setTitle: (s: string) => void;
   outcomeA: string;
@@ -72,6 +81,7 @@ const CreateBetContext = createContext<CreateBetState | null>(null);
 
 export function CreateBetProvider({ children }: { children: ReactNode }) {
   const [template, setTemplate] = useState<BetTemplateSerialized | null>(null);
+  const [isCustom, setIsCustomState] = useState(false);
   const [title, setTitle] = useState("");
   const [outcomeA, setOutcomeA] = useState("");
   const [outcomeB, setOutcomeB] = useState("");
@@ -99,9 +109,26 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
 
   const canAutoVerify = deriveCanAutoVerify(template);
 
+  // Coupled setter: entering custom mode is a single atomic action that
+  // guarantees the mutual-exclusion invariant — a custom bet has NO template,
+  // is ALWAYS subjective (PEER_AGREE), and never carries an externalRef. The
+  // title is cleared so the user names their own bet (no template pre-fill).
+  const setIsCustom = useCallback((v: boolean) => {
+    setIsCustomState(v);
+    if (v) {
+      setTemplate(null);
+      setSettlementModeState("PEER_AGREE");
+      setExternalRefState(null);
+      setTitle("");
+    }
+  }, []);
+
   const handleSetTemplate = (t: BetTemplateSerialized | null) => {
     setTemplate(t);
     if (t) {
+      // Picking a template is the opposite of custom — they are mutually
+      // exclusive (never both truthy, or the service rejects the payload).
+      setIsCustomState(false);
       // Pre-fill title from template.name; preserve user-edited outcomes/side/stake.
       setTitle(t.name);
     }
@@ -116,6 +143,7 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
 
   const reset = () => {
     setTemplate(null);
+    setIsCustomState(false);
     setTitle("");
     setOutcomeA("");
     setOutcomeB("");
@@ -131,6 +159,8 @@ export function CreateBetProvider({ children }: { children: ReactNode }) {
       value={{
         template,
         setTemplate: handleSetTemplate,
+        isCustom,
+        setIsCustom,
         title,
         setTitle,
         outcomeA,
