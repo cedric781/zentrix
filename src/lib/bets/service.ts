@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import { Prisma, type Bet, type BetInvite, type BetResultClaim, type BetParticipantConfirmation } from "@prisma/client";
+import { Prisma, type Bet, type BetInvite, type BetResultClaim, type BetParticipantConfirmation, type SettlementMode } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   recordTransaction,
@@ -62,6 +62,10 @@ export interface CreateBetInput {
   templateId?: string;
   category?: string;
   isCustom?: boolean;
+  // Settlement intent. Defaults to PEER_AGREE. AUTO_VERIFY requires a
+  // BetExternalRef (objective auto-resolve) and an auto-resolve-capable
+  // template — enforced bidirectionally below.
+  settlementMode?: SettlementMode;
 }
 
 export interface CreateBetResult {
@@ -203,6 +207,26 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
       400,
     );
   }
+
+  // Settlement-mode invariant (bidirectional): AUTO_VERIFY ⟺ externalRef.
+  // Domain-boundary mirror of the zod superRefine at the HTTP edge — never
+  // trust only the edge. Keeps the resolve-cron (which triggers on externalRef
+  // presence) consistent with the user-declared intent.
+  const settlementMode: SettlementMode = input.settlementMode ?? "PEER_AGREE";
+  if (settlementMode === "AUTO_VERIFY" && !input.externalRef) {
+    throw new BetError(
+      "BET_INVALID_INPUT",
+      "AUTO_VERIFY requires an externalRef (an external event to auto-resolve against)",
+      400,
+    );
+  }
+  if (settlementMode === "PEER_AGREE" && input.externalRef) {
+    throw new BetError(
+      "BET_INVALID_INPUT",
+      "PEER_AGREE must not have an externalRef (peer-confirmed bets are not auto-resolved)",
+      400,
+    );
+  }
   if (matchId && !poolId) {
     throw new BetError(
       "BET_INVALID_INPUT",
@@ -285,6 +309,37 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
       }
     }
 
+    // b2. AUTO_VERIFY eligibility: requires a template that supports
+    // auto-resolve. A custom bet (no templateId) or a manual-resolve template
+    // cannot be auto-settled, so reject before reserving any balance.
+    if (settlementMode === "AUTO_VERIFY") {
+      if (!input.templateId) {
+        throw new BetError(
+          "BET_INVALID_INPUT",
+          "AUTO_VERIFY requires a templateId (custom bets cannot auto-resolve)",
+          400,
+        );
+      }
+      const template = await tx.betTemplate.findUnique({
+        where: { id: input.templateId },
+        select: { supportsAutoResolve: true },
+      });
+      if (!template) {
+        throw new BetError(
+          "BET_INVALID_INPUT",
+          `Template ${input.templateId} not found`,
+          400,
+        );
+      }
+      if (!template.supportsAutoResolve) {
+        throw new BetError(
+          "BET_INVALID_INPUT",
+          "AUTO_VERIFY requires a template with supportsAutoResolve=true",
+          400,
+        );
+      }
+    }
+
     // c. Reserve balance (atomic pre-flight — no ledger entry yet).
     const userAcct = await getUserAccount(tx, creatorId);
     try {
@@ -310,7 +365,7 @@ export async function createBet(input: CreateBetInput): Promise<CreateBetResult>
           creatorSide,
           stakeUnits,
           status: "PENDING_ESCROW",
-          settlementMode: "PROOF_CONFIRM",
+          settlementMode,
           resultStatus: "PENDING",
           version: 0,
           expiresAt,

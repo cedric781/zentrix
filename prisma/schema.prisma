@@ -69,8 +69,9 @@ enum BetStatus {
 }
 
 enum SettlementMode {
-  PROOF_CONFIRM
-  // ARBITER_REQUIRED, AUTO_VERIFY post-MVP — separate ADR
+  PEER_AGREE // subjective: both players propose/confirm the winner (no proof required)
+  AUTO_VERIFY // objective: auto-resolved via external result (requires BetExternalRef)
+  // PROOF_CONFIRM (winner submits proof) + ARBITER_USER_CHOSEN post-MVP — separate ADRs
 }
 
 enum SettlementType {
@@ -392,7 +393,7 @@ model Bet {
   stakeUnits     BigInt  @map("stake_units")
 
   status         BetStatus      @default(DRAFT)
-  settlementMode SettlementMode @default(PROOF_CONFIRM) @map("settlement_mode")
+  settlementMode SettlementMode @default(PEER_AGREE) @map("settlement_mode")
   resultStatus   ResultStatus   @default(PENDING) @map("result_status")
   winnerId       String?        @map("winner_id")
 

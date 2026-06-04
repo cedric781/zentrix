@@ -143,6 +143,8 @@ export type CreateBetInput = {
   templateId?: string;
   category?: string;
   isCustom?: boolean;
+  /** Settlement intent. Defaults server-side to PEER_AGREE. AUTO_VERIFY ⟺ externalRef. */
+  settlementMode?: "PEER_AGREE" | "AUTO_VERIFY";
 };
 
 export type CreateBetResponse = {

@@ -43,7 +43,7 @@ describe("Bet schema smoke", () => {
       },
     });
     expect(bet.status).toBe("DRAFT");
-    expect(bet.settlementMode).toBe("PROOF_CONFIRM");
+    expect(bet.settlementMode).toBe("PEER_AGREE");
     expect(bet.resultStatus).toBe("PENDING");
     expect(bet.version).toBe(0);
   });

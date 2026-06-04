@@ -1,6 +1,7 @@
 "use client";
 
 import { useCreateBetState } from "./create-bet-context";
+import { SettlementModeSelector } from "./settlement-mode-selector";
 import { ExternalEventPicker } from "./external-event-picker";
 import { EventSearchPicker } from "./event-search-picker";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,8 +47,11 @@ export function BetForm() {
   const allowedSources = Array.isArray(allowedSourcesRaw)
     ? (allowedSourcesRaw as TemplateAllowedSource[])
     : [];
-  const showPicker =
-    state.template.supportsAutoResolve === true && allowedSources.length > 0;
+  // Picker visibility is now driven by the chosen settlement mode, not the
+  // template capability directly. The context guarantees AUTO_VERIFY is only
+  // selectable on capable templates (canAutoVerify), so allowedSources is
+  // non-empty whenever this is true.
+  const showPicker = state.settlementMode === "AUTO_VERIFY";
   // EventSearchPicker covers Sport+Combat via ESPN/TheSportsDB. Other
   // auto-resolve categories (Esports/Games) fall back to the manual picker.
   const category = state.template.category;
@@ -84,21 +88,31 @@ export function BetForm() {
 
   return (
     <div className="space-y-4">
-    {showPicker && useAutocompletePicker && (
-      <EventSearchPicker
-        category={category}
-        value={state.externalRef}
-        onChange={state.setExternalRef}
-        onSelectEvent={handleAutofill}
-      />
-    )}
-    {showPicker && !useAutocompletePicker && (
-      <ExternalEventPicker
-        allowedSources={allowedSources}
-        category={category}
-        value={state.externalRef}
-        onChange={state.setExternalRef}
-      />
+    <SettlementModeSelector />
+    {showPicker && (
+      <div className="space-y-1">
+        <label className="text-sm font-medium">
+          Wedstrijd / bron{" "}
+          <span className="text-muted-foreground font-normal">
+            (verplicht voor objectief)
+          </span>
+        </label>
+        {useAutocompletePicker ? (
+          <EventSearchPicker
+            category={category}
+            value={state.externalRef}
+            onChange={state.setExternalRef}
+            onSelectEvent={handleAutofill}
+          />
+        ) : (
+          <ExternalEventPicker
+            allowedSources={allowedSources}
+            category={category}
+            value={state.externalRef}
+            onChange={state.setExternalRef}
+          />
+        )}
+      </div>
     )}
     <Card>
       <CardContent className="pt-6 space-y-4">
