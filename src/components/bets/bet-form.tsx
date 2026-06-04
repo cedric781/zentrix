@@ -33,32 +33,47 @@ const MS_PER_HOUR = 60 * 60 * 1000;
 export function BetForm() {
   const state = useCreateBetState();
 
-  if (!state.template) {
+  // Render once a path is chosen: a template, OR custom (free) mode. In custom
+  // mode there is no template, so every state.template.* read below MUST be
+  // null-safe — that branch sets template=null + PEER_AGREE.
+  if (!state.template && !state.isCustom) {
     return (
       <Alert>
         <AlertDescription>
-          Pick a template above to start filling in your bet.
+          Pick a template above — or make your own — to start filling in your bet.
         </AlertDescription>
       </Alert>
     );
   }
 
-  const allowedSourcesRaw = state.template.allowedSources;
+  // null-safe: custom mode has no template. allowedSources only feeds the
+  // event picker, which never renders in custom mode (PEER_AGREE → showPicker false).
+  const allowedSourcesRaw = state.template?.allowedSources;
   const allowedSources = Array.isArray(allowedSourcesRaw)
     ? (allowedSourcesRaw as TemplateAllowedSource[])
     : [];
   // Picker visibility is now driven by the chosen settlement mode, not the
   // template capability directly. The context guarantees AUTO_VERIFY is only
   // selectable on capable templates (canAutoVerify), so allowedSources is
-  // non-empty whenever this is true.
+  // non-empty whenever this is true. Custom mode is PEER_AGREE → always false.
   const showPicker = state.settlementMode === "AUTO_VERIFY";
   // EventSearchPicker covers Sport+Combat via ESPN/TheSportsDB. Other
   // auto-resolve categories (Esports/Games) fall back to the manual picker.
-  const category = state.template.category;
+  // null-safe: "" in custom mode (picker doesn't render, so unused).
+  const category = state.template?.category ?? "";
   const useAutocompletePicker = category === "Sport" || category === "Combat";
   // Title is pre-filled with template.name when a template is picked; treat
-  // that as "still at default" for the auto-fill empty-check.
-  const templateName = state.template.name;
+  // that as "still at default" for the auto-fill empty-check. null-safe: ""
+  // in custom mode (autofill only fires from the event picker, which is hidden).
+  const templateName = state.template?.name ?? "";
+
+  // Custom (free) bets aren't sports-shaped, so the sports-flavoured example
+  // placeholders would mislead. Swap them for free-form hints in custom mode.
+  const titlePlaceholder = state.isCustom
+    ? "bv. Wie haalt deze week de meeste stappen?"
+    : "e.g. Real Madrid vs Barcelona";
+  const outcomeAPlaceholder = state.isCustom ? "bv. Ik" : "e.g. Real Madrid wins";
+  const outcomeBPlaceholder = state.isCustom ? "bv. Jij" : "e.g. Barcelona wins";
 
   const handleAutofill = (event: ExternalEventSummary) => {
     if (!state.title || state.title === templateName) {
@@ -124,7 +139,7 @@ export function BetForm() {
             id="title"
             value={state.title}
             onChange={(e) => state.setTitle(e.target.value)}
-            placeholder="e.g. Real Madrid vs Barcelona"
+            placeholder={titlePlaceholder}
             maxLength={200}
           />
         </div>
@@ -138,7 +153,7 @@ export function BetForm() {
               id="outcomeA"
               value={state.outcomeA}
               onChange={(e) => state.setOutcomeA(e.target.value)}
-              placeholder="e.g. Real Madrid wins"
+              placeholder={outcomeAPlaceholder}
               maxLength={100}
             />
           </div>
@@ -150,7 +165,7 @@ export function BetForm() {
               id="outcomeB"
               value={state.outcomeB}
               onChange={(e) => state.setOutcomeB(e.target.value)}
-              placeholder="e.g. Barcelona wins"
+              placeholder={outcomeBPlaceholder}
               maxLength={100}
             />
           </div>
