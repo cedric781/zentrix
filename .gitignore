@@ -53,3 +53,6 @@ prisma/migrations/dev/
 # pnpm only — block npm lockfile drift
 package-lock.json
 .env*.local
+
+# B1 — local test DB config (NEVER prod); see vitest.global-setup.ts
+.env.test
