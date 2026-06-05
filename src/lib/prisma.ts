@@ -2,10 +2,17 @@
 // Avoids creating multiple clients during HMR in development.
 
 import { PrismaClient } from "@prisma/client";
+import { assertTestDb } from "./__guards__/assert-test-db";
 
 declare global {
   // eslint-disable-next-line no-var
   var _prismaClient: PrismaClient | undefined;
+}
+
+// B1 fail-closed: second layer for ad-hoc tsx/scripts that bypass vitest's
+// setup. Only under test — prod/dev construction paths are untouched.
+if (process.env.NODE_ENV === "test") {
+  assertTestDb();
 }
 
 export const prisma =

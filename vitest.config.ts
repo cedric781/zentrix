@@ -10,6 +10,8 @@ export default defineConfig({
     isolate: true,
     testTimeout: 30000,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    globalSetup: "./vitest.global-setup.ts",
+    setupFiles: ["./vitest.setup-env.ts"],
     env: {
       PRIVY_APP_ID: "mock-privy-app-id-for-tests",
       PRIVY_APP_SECRET: "mock-privy-app-secret-for-tests",
