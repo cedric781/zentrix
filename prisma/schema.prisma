@@ -135,6 +135,16 @@ enum EvidenceType {
   VIDEO
 }
 
+// FASE 2.0 — lifecycle of an evidence row's stored bytes.
+//   LEGACY  — pre-blob client-claimed fileUrl; never server-attested (size/hash unknown).
+//   PENDING — client-direct upload initiated; bytes not yet confirmed by onUploadCompleted.
+//   STORED  — bytes present in the private Blob store; size + SHA-256 server-attested.
+enum UploadState {
+  LEGACY
+  PENDING
+  STORED
+}
+
 enum TournamentFormat {
   SIMPLE
   SINGLE_ELIM
@@ -535,6 +545,12 @@ model BetEvidence {
   mimeType     String?      @map("mime_type")
   contentHash  String       @map("content_hash")
   description  String?
+  // FASE 2.0 — private Blob storage. blobPathname/sizeBytes are NULL for LEGACY rows
+  // (never measured). hashVerified flips true only after onUploadCompleted re-hashes.
+  blobPathname String?      @map("blob_pathname")
+  sizeBytes    Int?         @map("size_bytes")
+  hashVerified Boolean      @default(false) @map("hash_verified")
+  uploadState  UploadState  @default(PENDING) @map("upload_state")
   createdAt    DateTime     @default(now()) @map("created_at")
 
   bet        Bet  @relation(fields: [betId], references: [id], onDelete: Cascade)
@@ -687,6 +703,12 @@ model MatchEvidence {
   mimeType     String?      @map("mime_type")
   contentHash  String       @map("content_hash")
   description  String?
+  // FASE 2.0 — private Blob storage. blobPathname/sizeBytes are NULL for LEGACY rows
+  // (never measured). hashVerified flips true only after onUploadCompleted re-hashes.
+  blobPathname String?      @map("blob_pathname")
+  sizeBytes    Int?         @map("size_bytes")
+  hashVerified Boolean      @default(false) @map("hash_verified")
+  uploadState  UploadState  @default(PENDING) @map("upload_state")
   createdAt    DateTime     @default(now()) @map("created_at")
 
   match      Match @relation(fields: [matchId], references: [id], onDelete: Cascade)

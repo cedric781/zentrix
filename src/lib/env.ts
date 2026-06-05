@@ -20,6 +20,17 @@ const EnvSchema = z.object({
   FEE_WALLET_ADDRESS: z.string().min(32).max(44),
   ESCROW_WALLET_ADDRESS: z.string().min(32).max(44),
   CRON_SECRET: z.string().min(32).optional(),
+  // FASE 2.0 — Vercel Blob (PRIVATE store) for evidence upload/serve.
+  // OIDC is the Vercel-runtime default: the SDK pairs BLOB_STORE_ID with the
+  // auto-injected VERCEL_OIDC_TOKEN — no static secret needed on Vercel.
+  // BLOB_STORE_ID is created when the store is connected to the project (form
+  // "store_<id>" or "<id>"). BLOB_READ_WRITE_TOKEN remains an optional fallback
+  // for code running OUTSIDE Vercel (CI, other hosts) or client-token issuance.
+  // Both optional so the app still boots before the store is wired; the storage
+  // lib asserts at least one is present at use-time (src/lib/storage/blob.ts,
+  // assertBlobConfigured) and fails cleanly without either.
+  BLOB_STORE_ID: z.string().min(8).optional(),
+  BLOB_READ_WRITE_TOKEN: z.string().min(30).optional(),
   DEPOSITS_DISABLED: z.coerce.boolean().default(false),
   WITHDRAWALS_DISABLED: z.coerce.boolean().default(false),
   BETS_DISABLED: z.coerce.boolean().default(false),
