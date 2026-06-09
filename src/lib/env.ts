@@ -35,6 +35,9 @@ const EnvSchema = z.object({
   // user (ownerId: null) — the address path fails with "User not found".
   // Required by the payout cron to release escrow on-chain.
   ESCROW_WALLET_ID: z.string().optional(),
+  // Operator kill switch for the one-off admin escrow-release/sweep route.
+  // Default-off: the route returns 403 unless this is exactly "true".
+  ESCROW_RELEASE_ENABLED: z.string().optional(),
   SENTRY_DSN: z.string().url().optional(),
   POOL_MIN_BET_USDC: z.string().default("1"),
   POOL_PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(1000).default(200),
