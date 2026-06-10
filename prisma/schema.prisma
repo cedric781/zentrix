@@ -177,6 +177,14 @@ enum EscrowDepositStatus {
   FAILED_TERMINAL
 }
 
+enum OnChainRefundStatus {
+  PENDING
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  FAILED_TERMINAL
+}
+
 // ── MODELS ─────────────────────────────────────────────────────────────────
 
 model User {
@@ -456,6 +464,20 @@ model Bet {
   escrowDepositProcessingAt  DateTime?             @map("escrow_deposit_processing_at")
   escrowDepositProcessingBy  String?               @map("escrow_deposit_processing_by")
 
+  // PHASE 3a: On-chain refund tracking (VOID/expiry stake return).
+  // Mirrors the payout/escrowDeposit column families. refundLegs is the
+  // per-participant leg list DERIVED from the ledger refund entries actually
+  // written (escrow→creator, escrow→opponent if present) — never stakeUnits×N.
+  onChainRefundStatus  OnChainRefundStatus?   @map("on_chain_refund_status")
+  refundLegs           Json?                  @map("refund_legs")
+  refundRetryCount     Int                    @default(0) @map("refund_retry_count")
+  refundNextRetryAt    DateTime?              @map("refund_next_retry_at")
+  refundProcessingAt   DateTime?              @map("refund_processing_at")
+  refundProcessingBy   String?                @map("refund_processing_by")
+  refundLastError      String?                @map("refund_last_error")
+  refundAttemptedAt    DateTime?              @map("refund_attempted_at")
+  refundConfirmedAt    DateTime?              @map("refund_confirmed_at")
+
   idempotencyKey             String?               @unique @map("idempotency_key")
   acceptIdempotencyKey       String?               @unique @map("accept_idempotency_key")
 
@@ -489,6 +511,7 @@ model Bet {
   @@index([status, ledgerStatus], map: "idx_bets_status_ledger")
   @@index([onChainPayoutStatus, payoutNextRetryAt], map: "idx_bets_payout_retry")
   @@index([escrowDepositStatus, escrowDepositNextRetryAt], map: "idx_bets_escrow_deposit_retry")
+  @@index([onChainRefundStatus, refundNextRetryAt], map: "idx_bets_refund_retry")
   @@map("bets")
 }
 

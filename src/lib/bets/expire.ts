@@ -3,7 +3,8 @@ import { recordTransaction, getUserAccount, type TxClient } from "@/lib/ledger";
 import { BetError } from "@/lib/bets/errors";
 import { trackReputationEvent } from "@/lib/reputation/service";
 import { logger } from "@/lib/logger";
-import type { Bet } from "@prisma/client";
+import { buildRefundLegs, type RefundParticipant } from "@/lib/refunds/legs";
+import { Prisma, type Bet } from "@prisma/client";
 
 /**
  * Expire an OPEN bet past expiresAt timestamp.
@@ -37,6 +38,10 @@ export async function expireOpenBet(
     where: { scopeKey: `bet:${betId}` },
   });
   const creatorAcct = await getUserAccount(tx, bet.createdById);
+  const creatorUser = await tx.user.findUniqueOrThrow({
+    where: { id: bet.createdById },
+    select: { embeddedWalletAddress: true },
+  });
 
   const ledgerResult = await recordTransaction({
     tx,
@@ -56,9 +61,28 @@ export async function expireOpenBet(
     ],
   });
 
+  // PHASE 3a — derive refund legs from the entries just written (single-sided:
+  // creator only). createMany returns no rows, so re-read by transactionId.
+  // Folded into the version+status-guarded updateMany below so it commits
+  // atomically with the EXPIRED transition; a re-run throws at the status guard
+  // above (status !== OPEN) before reaching here, so legs are never overwritten.
+  const refundEntries = await tx.ledgerEntry.findMany({
+    where: { transactionId: ledgerResult.transaction.id },
+    select: { id: true, creditAccountId: true, amountUnits: true },
+  });
+  const refundParticipants: RefundParticipant[] = [
+    { side: "creator", accountId: creatorAcct.id, destOwner: creatorUser.embeddedWalletAddress },
+  ];
+  const refundLegs = buildRefundLegs(refundEntries, refundParticipants);
+
   const updated = await tx.bet.updateMany({
     where: { id: betId, version: bet.version, status: "OPEN" },
-    data: { status: "EXPIRED", version: { increment: 1 } },
+    data: {
+      status: "EXPIRED",
+      version: { increment: 1 },
+      onChainRefundStatus: "PENDING",
+      refundLegs: refundLegs as unknown as Prisma.InputJsonValue,
+    },
   });
   if (updated.count !== 1) {
     throw new BetError(
@@ -149,6 +173,14 @@ export async function autoVoidProposedBet(
   });
   const creatorAcct = await getUserAccount(tx, bet.createdById);
   const opponentAcct = await getUserAccount(tx, bet.opponentUserId);
+  const creatorUser = await tx.user.findUniqueOrThrow({
+    where: { id: bet.createdById },
+    select: { embeddedWalletAddress: true },
+  });
+  const opponentUser = await tx.user.findUniqueOrThrow({
+    where: { id: bet.opponentUserId },
+    select: { embeddedWalletAddress: true },
+  });
 
   const ledgerResult = await recordTransaction({
     tx,
@@ -175,12 +207,29 @@ export async function autoVoidProposedBet(
     ],
   });
 
+  // PHASE 3a — derive refund legs from the two entries just written
+  // (double-sided: creator + opponent). Re-read by transactionId since
+  // createMany returns no rows; buildRefundLegs sorts creator-first. Folded
+  // into the version+status-guarded updateMany so it commits atomically with
+  // the VOID transition; a re-run throws at the status guard above.
+  const refundEntries = await tx.ledgerEntry.findMany({
+    where: { transactionId: ledgerResult.transaction.id },
+    select: { id: true, creditAccountId: true, amountUnits: true },
+  });
+  const refundParticipants: RefundParticipant[] = [
+    { side: "creator", accountId: creatorAcct.id, destOwner: creatorUser.embeddedWalletAddress },
+    { side: "opponent", accountId: opponentAcct.id, destOwner: opponentUser.embeddedWalletAddress },
+  ];
+  const refundLegs = buildRefundLegs(refundEntries, refundParticipants);
+
   const updated = await tx.bet.updateMany({
     where: { id: betId, version: bet.version, status: "RESULT_PROPOSED" },
     data: {
       status: "VOID",
       version: { increment: 1 },
       voidedAt: new Date(),
+      onChainRefundStatus: "PENDING",
+      refundLegs: refundLegs as unknown as Prisma.InputJsonValue,
     },
   });
   if (updated.count !== 1) {
