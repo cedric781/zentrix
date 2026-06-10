@@ -56,3 +56,6 @@ package-lock.json
 
 # B1 — local test DB config (NEVER prod); see vitest.global-setup.ts
 .env.test
+
+# Local throwaway scripts (wallet addresses, recon probes) — NEVER commit
+scripts-local/
