@@ -4,6 +4,7 @@ import type { OnChainPayoutStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { transferUsdcOnChain, TransferUsdcError } from "@/lib/solana/transfer";
 import { getSolanaConnection } from "@/lib/solana/connection";
+import { assertEscrowSolForAtas, EscrowSolInsufficientError } from "@/lib/solana/preflight";
 import { getEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
@@ -162,6 +163,28 @@ async function processPendingPayout(bet: PayoutBetInput): Promise<PayoutOutcome>
     // Config error: the proven signing path needs the walletId. Retry (not
     // terminal) so it self-heals once the env is set.
     return await markRetryOrTerminal(bet, new Error("ESCROW_WALLET_ID not configured — cannot sign escrow release"));
+  }
+
+  // ── SOL preflight — gate before ANY on-chain leg ───────────────────
+  // Creating a destination ATA costs the escrow wallet rent (+sig headroom)
+  // out of its SOL balance. If escrow is short on SOL the ATA-create — and so
+  // the whole transfer — fails on-chain. Gate here so we never burn a leg (or
+  // persist a sig) when the send is doomed. Mirror the :217 condition: the fee
+  // leg only creates an ATA when it is a real on-chain transfer (fee wallet
+  // distinct from escrow).
+  const destinationOwners = [winner.embeddedWalletAddress];
+  if (env.FEE_WALLET_ADDRESS !== env.ESCROW_WALLET_ADDRESS) {
+    destinationOwners.push(env.FEE_WALLET_ADDRESS);
+  }
+  try {
+    await assertEscrowSolForAtas({ destinationOwners });
+  } catch (err) {
+    // Split the routing: insufficient SOL is a non-terminal HOLD with a FROZEN
+    // retry counter (markSolHold) — it self-heals after a top-up and must never
+    // march toward FAILED_TERMINAL. Any other throw (RPC error) is an ordinary
+    // retryable failure that counts toward the terminal ceiling.
+    if (err instanceof EscrowSolInsufficientError) return await markSolHold(bet, err);
+    return await markRetryOrTerminal(bet, err);
   }
 
   // ── Req 3/4 — WINNER leg first ─────────────────────────────────────
@@ -380,6 +403,52 @@ async function finalizePayout(
 }
 
 // ── Failure transitions (NO ledger reversal — ledger is already final) ─
+
+// SOL-hold recheck cadence: how long a gas-starved payout waits before the cron
+// re-picks it. Deliberately NOT computeNextRetry's exponential backoff — a SOL
+// hold is a pause until top-up, not a failed attempt to back off from.
+const SOL_HOLD_RECHECK_MS = 10 * 60 * 1000;
+
+/**
+ * Non-terminal HOLD for "escrow out of SOL". Unlike markRetryOrTerminal this
+ * NEVER touches payoutRetryCount, so a gas shortage can never march a bet toward
+ * MAX_RETRIES / FAILED_TERMINAL. The bet stays FAILED with payoutNextRetryAt set
+ * SOL_HOLD_RECHECK_MS out, so the cron's Branch A (status in [PENDING,FAILED]
+ * AND payoutNextRetryAt <= now — NO payoutRetryCount filter, batch.ts:52) re-
+ * picks it every interval and it self-heals once the escrow wallet is topped up.
+ * Releases the processing claim (mirrors the FAILED-path writer); writes no
+ * sig/ledger and sends nothing.
+ */
+async function markSolHold(
+  bet: PayoutBetInput,
+  err: EscrowSolInsufficientError,
+): Promise<PayoutOutcome> {
+  await prisma.bet.update({
+    where: { id: bet.id },
+    data: {
+      onChainPayoutStatus: "FAILED",
+      payoutLastError: err.message.substring(0, 500),
+      payoutNextRetryAt: new Date(Date.now() + SOL_HOLD_RECHECK_MS),
+      // payoutRetryCount intentionally UNCHANGED — gas holds are free.
+      payoutProcessingAt: null,
+      payoutProcessingBy: null,
+    },
+  });
+
+  // Error-level (NOT warn): an out-of-gas escrow halts ALL payouts until topped
+  // up — this is the alarm (no Sentry configured in this repo; the log is it).
+  logger.error(
+    {
+      betId: bet.id,
+      requiredLamports: err.requiredLamports,
+      balanceLamports: err.balanceLamports,
+      atasToCreate: err.atasToCreate,
+    },
+    "payout HELD: escrow out of SOL — retrying after top-up, NOT counted toward terminal",
+  );
+
+  return { outcome: "failed", betId: bet.id, reason: err.message, retryCount: bet.payoutRetryCount };
+}
 
 async function markRetryOrTerminal(bet: PayoutBetInput, err: unknown): Promise<PayoutOutcome> {
   const reason =
