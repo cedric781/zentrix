@@ -4,6 +4,7 @@ import type { OnChainPayoutStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { transferUsdcOnChain, TransferUsdcError } from "@/lib/solana/transfer";
 import { getSolanaConnection } from "@/lib/solana/connection";
+import { assertEscrowSolForAtas, EscrowSolInsufficientError } from "@/lib/solana/preflight";
 import { getEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 
@@ -162,6 +163,36 @@ async function processPendingPayout(bet: PayoutBetInput): Promise<PayoutOutcome>
     // Config error: the proven signing path needs the walletId. Retry (not
     // terminal) so it self-heals once the env is set.
     return await markRetryOrTerminal(bet, new Error("ESCROW_WALLET_ID not configured — cannot sign escrow release"));
+  }
+
+  // ── SOL preflight — RETRYABLE gate before ANY on-chain leg ─────────
+  // Creating a destination ATA costs the escrow wallet rent (+sig headroom)
+  // out of its SOL balance. If escrow is short on SOL the ATA-create — and so
+  // the whole transfer — fails on-chain. Gate here so we never burn a leg (or
+  // persist a sig) when the send is doomed. Insufficient SOL is TRANSIENT
+  // (self-heals after a top-up), so every failure here is retryable, never
+  // terminal. Mirror the :217 condition: the fee leg only creates an ATA when
+  // it is a real on-chain transfer (fee wallet distinct from escrow).
+  const destinationOwners = [winner.embeddedWalletAddress];
+  if (env.FEE_WALLET_ADDRESS !== env.ESCROW_WALLET_ADDRESS) {
+    destinationOwners.push(env.FEE_WALLET_ADDRESS);
+  }
+  try {
+    await assertEscrowSolForAtas({ destinationOwners });
+  } catch (err) {
+    if (err instanceof EscrowSolInsufficientError) {
+      logger.warn(
+        {
+          betId: bet.id,
+          atasToCreate: err.atasToCreate,
+          requiredLamports: err.requiredLamports,
+          balanceLamports: err.balanceLamports,
+        },
+        "payout SOL preflight: escrow balance below ATA-create requirement — retry after top-up",
+      );
+    }
+    // EscrowSolInsufficientError OR any RPC error from the preflight → retryable.
+    return await markRetryOrTerminal(bet, err);
   }
 
   // ── Req 3/4 — WINNER leg first ─────────────────────────────────────
